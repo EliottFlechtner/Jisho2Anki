@@ -1,17 +1,17 @@
 services:
-  anki-autofiller:
+  jisho2anki:
     build:
       context: .
       dockerfile: Dockerfile
-    image: anki-autofiller:dev
-    container_name: anki-autofiller-dev
+    image: jisho2anki:dev
+    container_name: jisho2anki-dev
     ports:
       - "${APP_PORT:-5000}:5000"
     environment:
-      ANKI_AUTOFILLER_FLASK_HOST: 0.0.0.0
-      ANKI_AUTOFILLER_FLASK_PORT: 5000
-      ANKI_AUTOFILLER_OUTPUT_PATH: /app/output/anki_import.tsv
-      ANKI_AUTOFILLER_ANKI_URL: ${ANKI_AUTOFILLER_ANKI_URL:-http://host.docker.internal:8765}
+      ANKI_JISHO2ANKI_FLASK_HOST: 0.0.0.0
+      ANKI_JISHO2ANKI_FLASK_PORT: 5000
+      ANKI_JISHO2ANKI_OUTPUT_PATH: /app/output/anki_import.tsv
+      ANKI_JISHO2ANKI_ANKI_URL: ${ANKI_JISHO2ANKI_ANKI_URL:-http://host.docker.internal:8765}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

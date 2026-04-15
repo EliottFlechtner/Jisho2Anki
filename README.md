@@ -1,9 +1,9 @@
-# Anki Autofiller
+# Jisho2Anki
 
-[![Compose Smoke](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/compose-smoke.yml/badge.svg)](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/compose-smoke.yml)
-[![Docker Release](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/docker-release.yml/badge.svg)](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/docker-release.yml)
-[![Latest Release](https://img.shields.io/github/v/release/EliottFlechtner/anki-autofiller?display_name=tag)](https://github.com/EliottFlechtner/anki-autofiller/releases)
-[![GHCR Image](https://img.shields.io/badge/GHCR-ghcr.io%2Feliottflechtner%2Fanki--autofiller-2ea44f)](https://ghcr.io/eliottflechtner/anki-autofiller)
+[![Compose Smoke](https://github.com/EliottFlechtner/jisho2anki/actions/workflows/compose-smoke.yml/badge.svg)](https://github.com/EliottFlechtner/jisho2anki/actions/workflows/compose-smoke.yml)
+[![Docker Release](https://github.com/EliottFlechtner/jisho2anki/actions/workflows/docker-release.yml/badge.svg)](https://github.com/EliottFlechtner/jisho2anki/actions/workflows/docker-release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/EliottFlechtner/jisho2anki?display_name=tag)](https://github.com/EliottFlechtner/jisho2anki/releases)
+[![GHCR Image](https://img.shields.io/badge/GHCR-ghcr.io%2Feliottflechtner%2Fjisho2anki-2ea44f)](https://ghcr.io/eliottflechtner/jisho2anki)
 
 Small tool to speed up Japanese vocab note creation for Anki.
 
@@ -96,7 +96,7 @@ What this pipeline gives you:
 
 Image pinning:
 
-- set `ANKI_AUTOFILLER_IMAGE_TAG` in `.env.docker` (for example `v0.1`) to lock deployment to a specific release image.
+- set `ANKI_JISHO2ANKI_IMAGE_TAG` in `.env.docker` (for example `v0.1`) to lock deployment to a specific release image.
 
 If Docker build fails at `pip install` with `Temporary failure in name resolution`, that is a Docker DNS/network issue. `docker-up.sh` now pulls a prebuilt image first, and if it must build locally it fails fast instead of hanging.
 
@@ -153,7 +153,7 @@ Workflow file:
 
 ## Config Files And Presets
 
-This project supports env-style config files with `ANKI_AUTOFILLER_*` keys.
+This project supports env-style config files with `ANKI_JISHO2ANKI_*` keys.
 
 1. Copy `.env.example` to `.env` and edit values.
 2. Optional: create additional env files and pass them with `--env-file`.
@@ -183,7 +183,7 @@ Current preset set:
 Example:
 
 ```bash
-python3 anki_autofiller.py --env-file configs/my-run.env --anki-connect
+python3 jisho2anki.py --env-file configs/my-run.env --anki-connect
 ```
 
 The web app uses the same settings loader. In the browser, clicking `Load preset defaults` or changing the preset/env file repopulates the visible fields with the merged settings. The values currently shown in the form are the values that get submitted. If you edit a field after loading a preset, that manual edit wins for that submission.
@@ -206,7 +206,7 @@ If you want Vite-managed frontend editing with live browser updates, the easiest
 
 Open: the Flask URL printed by the launcher output (for example `http://127.0.0.1:57581`).
 
-This starts Vite on a free local port and launches Flask with the matching dev-server URL already wired up. If you want to run the pieces manually, use `cd frontend && npm run dev` in one terminal and point `ANKI_AUTOFILLER_VITE_DEV_SERVER_URL` at the Vite port in another.
+This starts Vite on a free local port and launches Flask with the matching dev-server URL already wired up. If you want to run the pieces manually, use `cd frontend && npm run dev` in one terminal and point `ANKI_JISHO2ANKI_VITE_DEV_SERVER_URL` at the Vite port in another.
 
 The launcher also picks a free Flask port automatically, so it avoids the common "port already in use" startup failure.
 
@@ -244,19 +244,19 @@ Create `words.txt`:
 Generate TSV:
 
 ```bash
-python3 anki_autofiller.py --input words.txt --output anki_import.tsv --include-header
+python3 jisho2anki.py --input words.txt --output anki_import.tsv --include-header
 ```
 
 Using config defaults from `.env` or a preset:
 
 ```bash
-python3 anki_autofiller.py --preset balanced --anki-connect
+python3 jisho2anki.py --preset balanced --anki-connect
 ```
 
 Interactive candidate review (CLI only):
 
 ```bash
-python3 anki_autofiller.py --input words.txt --output anki_import.tsv --interactive-review --sentence-count 2
+python3 jisho2anki.py --input words.txt --output anki_import.tsv --interactive-review --sentence-count 2
 ```
 
 Pitch accent is on by default in both CLI and web mode. Use `--no-pitch-accent` to disable it.
@@ -285,7 +285,7 @@ If it returns a JSON result, AnkiConnect is reachable.
 ## Direct Add To Anki (CLI)
 
 ```bash
-python3 anki_autofiller.py \
+python3 jisho2anki.py \
   --input words.txt \
   --output anki_import.tsv \
   --anki-connect \
@@ -312,7 +312,8 @@ Your installed add-on exposes a `Pitch Accent` menu in Anki and an editor toolba
 ## Project Structure
 
 - `autofiller/`: core package with CLI, web app, and service modules
-- `anki_autofiller.py`: backward-compatible CLI entrypoint
+- `jisho2anki.py`: primary CLI entrypoint
+- `anki_autofiller.py`: backward-compatible CLI alias
 - `cli.py`: backward-compatible CLI wrapper
 - `web_app.py`: backward-compatible web wrapper
 - `templates/spa.html`: React SPA mount page

@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     bootstrap.add_argument(
         "--env-file",
         default=None,
-        help="Path to env-style config file with ANKI_AUTOFILLER_* values.",
+        help="Path to env-style config file with ANKI_JISHO2ANKI_* values.",
     )
     pre_args, _ = bootstrap.parse_known_args()
     defaults = load_settings(preset_name=pre_args.preset, env_file=pre_args.env_file)

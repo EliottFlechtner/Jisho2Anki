@@ -214,7 +214,7 @@ export default function App() {
     <div className="shell">
       <main className="panel">
         <header className="hero">
-          <p className="eyebrow">Anki Autofiller</p>
+          <p className="eyebrow">Jisho2Anki</p>
           <h1>Simple Japanese Card Generator</h1>
         </header>
 

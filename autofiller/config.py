@@ -35,7 +35,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "sentence_back_field": "Back",
 }
 
-ENV_PREFIX = "ANKI_AUTOFILLER_"
+ENV_PREFIX = "ANKI_JISHO2ANKI_"
+LEGACY_ENV_PREFIX = "ANKI_AUTOFILLER_"
+ENV_PREFIXES_IN_PRECEDENCE = (LEGACY_ENV_PREFIX, ENV_PREFIX)
 ENV_TO_KEY = {
     "INPUT": "input",
     "OUTPUT_PATH": "output_path",
@@ -143,20 +145,23 @@ def load_settings(
         file_sources.append(Path(env_file))
 
     for source in file_sources:
-        for env_key, raw_value in _load_env_file(source).items():
-            if not env_key.startswith(ENV_PREFIX):
-                continue
-            short_key = env_key[len(ENV_PREFIX) :]
-            mapped_key = ENV_TO_KEY.get(short_key)
-            if not mapped_key:
-                continue
-            settings[mapped_key] = _coerce_value(mapped_key, raw_value)
+        loaded_env = _load_env_file(source)
+        for prefix in ENV_PREFIXES_IN_PRECEDENCE:
+            for env_key, raw_value in loaded_env.items():
+                if not env_key.startswith(prefix):
+                    continue
+                short_key = env_key[len(prefix) :]
+                mapped_key = ENV_TO_KEY.get(short_key)
+                if not mapped_key:
+                    continue
+                settings[mapped_key] = _coerce_value(mapped_key, raw_value)
 
     for short_key, mapped_key in ENV_TO_KEY.items():
-        full_key = f"{ENV_PREFIX}{short_key}"
-        raw_value = os.environ.get(full_key)
-        if raw_value is None:
-            continue
-        settings[mapped_key] = _coerce_value(mapped_key, raw_value)
+        for prefix in ENV_PREFIXES_IN_PRECEDENCE:
+            full_key = f"{prefix}{short_key}"
+            raw_value = os.environ.get(full_key)
+            if raw_value is None:
+                continue
+            settings[mapped_key] = _coerce_value(mapped_key, raw_value)
 
     return settings

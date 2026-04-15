@@ -4,7 +4,10 @@ import {fileURLToPath} from 'node:url';
 import {defineConfig} from 'vite';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const defaultPort = Number(process.env.ANKI_AUTOFILLER_VITE_PORT || 4173);
+const defaultPort = Number(
+    process.env.ANKI_JISHO2ANKI_VITE_PORT ||
+        process.env.ANKI_AUTOFILLER_VITE_PORT || 4173,
+);
 
 export default defineConfig({
   plugins: [react()],

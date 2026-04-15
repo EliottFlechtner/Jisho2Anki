@@ -1,1 +1,1 @@
-"""Core package for Anki Autofiller."""
+"""Core package for Jisho2Anki."""

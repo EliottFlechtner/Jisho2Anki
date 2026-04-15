@@ -19,7 +19,7 @@ class JishoClient:
         req = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "anki-autofiller/0.3",
+                "User-Agent": "jisho2anki/0.3",
                 "Accept": "application/json,text/html",
             },
         )

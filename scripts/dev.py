@@ -48,9 +48,11 @@ def main() -> int:
     frontend_url = f"http://127.0.0.1:{frontend_port}"
 
     frontend_env = os.environ.copy()
+    frontend_env["ANKI_JISHO2ANKI_VITE_PORT"] = str(frontend_port)
     frontend_env["ANKI_AUTOFILLER_VITE_PORT"] = str(frontend_port)
 
     flask_env = os.environ.copy()
+    flask_env["ANKI_JISHO2ANKI_VITE_DEV_SERVER_URL"] = frontend_url
     flask_env["ANKI_AUTOFILLER_VITE_DEV_SERVER_URL"] = frontend_url
 
     print(f"Starting Vite on {frontend_url}")
@@ -71,6 +73,7 @@ def main() -> int:
 
         flask_port = find_free_port()
         flask_url = f"http://127.0.0.1:{flask_port}"
+        flask_env["ANKI_JISHO2ANKI_FLASK_PORT"] = str(flask_port)
         flask_env["ANKI_AUTOFILLER_FLASK_PORT"] = str(flask_port)
 
         print(f"Starting Flask on {flask_url}")

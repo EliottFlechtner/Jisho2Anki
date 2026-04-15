@@ -32,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/anki-autofiller
+          images: ghcr.io/${{ github.repository_owner }}/jisho2anki
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=tag

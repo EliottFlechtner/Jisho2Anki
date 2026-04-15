@@ -24,9 +24,9 @@ COPY cli.py ./cli.py
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
-ENV ANKI_AUTOFILLER_FLASK_HOST=0.0.0.0 \
-    ANKI_AUTOFILLER_FLASK_PORT=5000 \
-    ANKI_AUTOFILLER_OUTPUT_PATH=/app/output/anki_import.tsv
+ENV ANKI_JISHO2ANKI_FLASK_HOST=0.0.0.0 \
+  ANKI_JISHO2ANKI_FLASK_PORT=5000 \
+  ANKI_JISHO2ANKI_OUTPUT_PATH=/app/output/anki_import.tsv
 
 EXPOSE 5000
 

@@ -20,10 +20,17 @@ from .pipeline import build_rows
 ROOT_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
 PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]")
-DEFAULT_FLASK_HOST = os.environ.get("ANKI_AUTOFILLER_FLASK_HOST", "127.0.0.1")
-DEFAULT_FLASK_PORT = int(
-    os.environ.get("ANKI_AUTOFILLER_FLASK_PORT", os.environ.get("PORT", 5000))
-)
+
+
+def _runtime_env(name: str, default: str) -> str:
+    return os.environ.get(
+        f"ANKI_JISHO2ANKI_{name}",
+        os.environ.get(f"ANKI_AUTOFILLER_{name}", default),
+    )
+
+
+DEFAULT_FLASK_HOST = _runtime_env("FLASK_HOST", "127.0.0.1")
+DEFAULT_FLASK_PORT = int(_runtime_env("FLASK_PORT", os.environ.get("PORT", "5000")))
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOB_LOCK = threading.Lock()
@@ -315,7 +322,7 @@ def _run_job(job_id: str, form_data: dict[str, str]) -> None:
 
 @app.get("/")
 def index() -> str:
-    vite_dev_server_url = os.environ.get("ANKI_AUTOFILLER_VITE_DEV_SERVER_URL", "")
+    vite_dev_server_url = _runtime_env("VITE_DEV_SERVER_URL", "")
     return render_template(
         "spa.html",
         vite_dev_server_url=vite_dev_server_url,

@@ -19,7 +19,7 @@ echo "Attempting to pull prebuilt image..."
 docker compose "${COMPOSE_ARGS[@]}" pull --ignore-pull-failures "$@" >/dev/null 2>&1 || true
 
 if docker compose "${COMPOSE_ARGS[@]}" up -d --no-build "$@"; then
-	echo "Anki Autofiller is starting at http://127.0.0.1:${APP_PORT:-5000}"
+	echo "Jisho2Anki is starting at http://127.0.0.1:${APP_PORT:-5000}"
 	exit 0
 fi
 
@@ -36,4 +36,4 @@ if ! docker compose "${COMPOSE_ARGS[@]}" build "$@"; then
 fi
 
 docker compose "${COMPOSE_ARGS[@]}" up -d "$@"
-echo "Anki Autofiller is starting at http://127.0.0.1:${APP_PORT:-5000}"
+echo "Jisho2Anki is starting at http://127.0.0.1:${APP_PORT:-5000}"

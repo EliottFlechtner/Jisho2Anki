@@ -1,5 +1,5 @@
 {
-  "name": "anki-autofiller-frontend",
+  "name": "jisho2anki-frontend",
   "private": true,
   "type": "module",
   "scripts": {
