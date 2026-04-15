@@ -40,10 +40,66 @@ docker compose logs -f
 docker compose down
 ```
 
+### Using Make Commands on Windows
+
+If you have `make` installed, you can use the convenience targets from the Makefile. Otherwise, use the explicit commands below.
+
+#### Option A.1: With Make Installed
+
+Install Make first:
+
+- **Using Chocolatey** (recommended):
+  ```powershell
+  choco install make
+  ```
+
+- **Using Scoop**:
+  ```powershell
+  scoop install make
+  ```
+
+- **Using WSL2** (Windows Subsystem for Linux):
+  ```bash
+  # Inside WSL2 Ubuntu/Debian
+  sudo apt-get install make
+  ```
+
+Then use make targets:
+
+```powershell
+make up              # Start production containers
+make down            # Stop containers
+make ps              # Show container status
+make logs            # Follow logs
+make build-dev       # Build dev image with BUILDKIT (fixes DNS issues)
+make build-dev-up    # Build dev image and start dev stack
+make dev-up          # Start dev stack (uses pre-built image)
+make test            # Run local tests
+make test-docker     # Run tests in container
+make help            # Show all targets
+```
+
+#### Option A.2: Without Make (Direct Docker Commands)
+
+```powershell
+# Start production stack
+docker compose --env-file .env.docker up -d
+
+# Start development stack
+docker compose -f docker-compose.dev.yml up
+
+# Build dev image (with BUILDKIT for DNS fixes)
+$env:DOCKER_BUILDKIT=1; docker build --network=host -t jisho2anki:dev .
+
+# Stop containers
+docker compose down
+```
+
 Notes:
 
-- This avoids Linux-only helpers such as `make up` and `./scripts/docker-up.sh`.
+- This avoids Linux-only helpers such as `./scripts/docker-up.sh` (which won't work on Windows).
 - `host.docker.internal` works on Docker Desktop, so desktop AnkiConnect is reachable from the container.
+- Dev image build with BUILDKIT (`--network=host`) fixes DNS resolution issues during package installation.
 
 ## Option B: Native Windows (No Docker)
 
@@ -77,7 +133,7 @@ cd ..
 cd frontend
 npm run build
 cd ..
-python web_app.py
+python -m autofiller.web_app
 ```
 
 - Frontend live-reload dev mode:
@@ -89,7 +145,7 @@ python scripts/dev.py
 - CLI-only mode:
 
 ```powershell
-python jisho2anki.py --input words.txt --output anki_import.tsv --include-header
+python -m autofiller.cli --input words.txt --output anki_import.tsv --include-header
 ```
 
 ## Windows Troubleshooting
