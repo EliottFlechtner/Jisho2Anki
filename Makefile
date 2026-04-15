@@ -17,19 +17,19 @@ help:
 	@echo "  make test-docker   - Run tests inside running Docker container"
 
 _ensure_env:
-	@python -c "import os, shutil; os.path.exists('.env.docker') or (os.path.exists('.env.docker.example') and shutil.copy('.env.docker.example', '.env.docker')) or None"
+	@python -c "import os, shutil; os.path.exists('.env.docker') or (os.path.exists('config/.env.docker.example') and shutil.copy('config/.env.docker.example', '.env.docker')) or None"
 
 up: _ensure_env
 	@python scripts/docker_wrapper.py up
 
 down:
-	docker compose --env-file .env.docker down
+	docker compose -f config/docker-compose.yml --env-file .env.docker down
 
 logs:
-	docker compose --env-file .env.docker logs -f
+	docker compose -f config/docker-compose.yml --env-file .env.docker logs -f
 
 ps:
-	docker compose --env-file .env.docker ps
+	docker compose -f config/docker-compose.yml --env-file .env.docker ps
 
 config:
 	docker compose --env-file .env.docker config

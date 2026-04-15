@@ -12,11 +12,11 @@ import urllib.error
 
 def get_compose_args():
     """Get docker compose arguments based on platform."""
-    args = ["docker", "compose", "-f", "docker-compose.yml"]
+    args = ["docker", "compose", "-f", "config/docker-compose.yml"]
     
     # Add Windows overrides on Windows
     if sys.platform in ("win32", "cygwin") or platform.system() == "Windows":
-        args.extend(["-f", "docker-compose.windows.yml"])
+        args.extend(["-f", "config/docker-compose.windows.yml"])
     
     args.extend(["--env-file", ".env.docker"])
     return args

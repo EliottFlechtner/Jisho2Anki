@@ -41,9 +41,14 @@ cd frontend
 npm install
 ```
 
-## Windows Dev Notes
+## Documentation
 
-For Windows setup and run commands (Docker Desktop and no-Docker paths), see `WINDOWS_DEV.md`.
+- **[Getting Started](docs/README.md)** - Quick start guide
+- **[Contributing](docs/CONTRIBUTING.md)** - Development setup and guidelines
+- **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
+- **[Project Structure](docs/PROJECT_STRUCTURE.md)** - Codebase architecture
+- **[Windows Development](docs/WINDOWS_DEV.md)** - Windows-specific setup and commands
+- **[Changelog](docs/CHANGELOG.md)** - Version history and releases
 
 ## Docker Deployment Pipeline
 

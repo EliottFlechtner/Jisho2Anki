@@ -17,7 +17,9 @@ fi
 
 # Add Windows-specific overrides if on Windows
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-	COMPOSE_ARGS+=(-f docker-compose.yml -f docker-compose.windows.yml)
+	COMPOSE_ARGS+=(-f config/docker-compose.yml -f config/docker-compose.windows.yml)
+else
+	COMPOSE_ARGS+=(-f config/docker-compose.yml)
 fi
 
 echo "Attempting to pull prebuilt image..."
