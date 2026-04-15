@@ -62,6 +62,24 @@ Useful commands:
 ./scripts/docker-down.sh
 ```
 
+Shortcuts with Make:
+
+```bash
+cp .env.docker.example .env.docker
+make up
+make logs
+make down
+```
+
+Additional targets:
+
+```bash
+make ps
+make config
+make dev-up
+make release-check
+```
+
 What this pipeline gives you:
 
 - one-command startup (`docker-up.sh`)
