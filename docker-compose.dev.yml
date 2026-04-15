@@ -1,9 +1,7 @@
 services:
   jisho2anki:
     user: "${UID:-1000}:${GID:-1000}"
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Use: make build-dev to build locally, or run: DOCKER_BUILDKIT=1 docker build --network=host -t jisho2anki:dev .
     image: jisho2anki:dev
     container_name: jisho2anki-dev
     ports:
