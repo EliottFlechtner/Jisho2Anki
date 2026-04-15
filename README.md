@@ -166,6 +166,15 @@ CLI config precedence is:
 
 Built-in presets live in `presets/`.
 
+Current preset set:
+
+- `balanced`
+- `turbo-import`
+- `high-quality`
+- `sentence-cards`
+- `tsv-only`
+- `safe-api`
+
 Example:
 
 ```bash
@@ -236,7 +245,7 @@ python3 anki_autofiller.py --input words.txt --output anki_import.tsv --include-
 Using config defaults from `.env` or a preset:
 
 ```bash
-python3 anki_autofiller.py --preset fast-import --anki-connect
+python3 anki_autofiller.py --preset balanced --anki-connect
 ```
 
 Interactive candidate review (CLI only):
