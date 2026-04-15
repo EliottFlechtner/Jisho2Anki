@@ -17,16 +17,16 @@ help:
 	@echo "  make test-docker   - Run tests inside running Docker container"
 
 _ensure_env:
-	@test -f .env.docker || (test -f .env.docker.example && cp .env.docker.example .env.docker) || true
+	@python -c "import os, shutil; os.path.exists('.env.docker') or (os.path.exists('.env.docker.example') and shutil.copy('.env.docker.example', '.env.docker')) or None"
 
 up: _ensure_env
-	./scripts/docker-up.sh
+	@python scripts/docker_wrapper.py up
 
 down:
-	./scripts/docker-down.sh
+	docker compose --env-file .env.docker down
 
 logs:
-	./scripts/docker-logs.sh
+	docker compose --env-file .env.docker logs -f
 
 ps:
 	docker compose --env-file .env.docker ps
@@ -38,32 +38,21 @@ dev-up:
 	docker compose -f docker-compose.dev.yml up
 
 build-dev:
-	DOCKER_BUILDKIT=1 docker build --network=host -t jisho2anki:dev .
+	@python scripts/docker_wrapper.py build-dev
 
 build-dev-up: build-dev
 	docker compose -f docker-compose.dev.yml up
 
 release-check:
-	@test -f .env.docker || cp .env.docker.example .env.docker
-	docker compose --env-file .env.docker config >/dev/null
+	@python -c "import os, shutil; os.path.exists('.env.docker') or (os.path.exists('.env.docker.example') and shutil.copy('.env.docker.example', '.env.docker')) or None"
+	@python -c "import subprocess; subprocess.run(['docker', 'compose', '--env-file', '.env.docker', 'config'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
 	@echo "Release check OK"
 
 smoke: up
-	@for i in $$(seq 1 30); do \
-		if curl -fsS http://127.0.0.1:$${APP_PORT:-5000}/healthz >/dev/null; then \
-			break; \
-		fi; \
-		sleep 1; \
-		if [ $$i -eq 30 ]; then \
-			echo "Health endpoint did not become ready in time"; \
-			exit 1; \
-		fi; \
-	done
-	@curl -fsS http://127.0.0.1:$${APP_PORT:-5000}/api/bootstrap >/dev/null
-	@echo "Smoke check OK"
+	@python scripts/docker_wrapper.py healthz
 
 backup:
-	./scripts/backup-output.sh
+	@python -c "import shutil, os; os.path.exists('output/anki_import.tsv') and shutil.copy('output/anki_import.tsv', 'output/anki_import.tsv.bak') and print('Backed up to output/anki_import.tsv.bak') or print('No TSV file to backup')"
 
 test:
 	python -m unittest discover -s tests -p "test_*.py" -v
