@@ -209,7 +209,11 @@ __marimo__/
 # Generated imports
 anki_import.tsv
 words.txt
+output/
 
 # Frontend build output
 frontend/node_modules/
 frontend/.vite/
+
+# Docker local config
+.env.docker

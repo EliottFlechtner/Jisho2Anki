@@ -20,6 +20,7 @@ from .pipeline import build_rows
 ROOT_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
 PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]")
+DEFAULT_FLASK_HOST = os.environ.get("ANKI_AUTOFILLER_FLASK_HOST", "127.0.0.1")
 DEFAULT_FLASK_PORT = int(
     os.environ.get("ANKI_AUTOFILLER_FLASK_PORT", os.environ.get("PORT", 5000))
 )
@@ -324,6 +325,11 @@ def index() -> str:
     )
 
 
+@app.get("/healthz")
+def healthz() -> Any:
+    return jsonify({"status": "ok"})
+
+
 @app.post("/api/start")
 def api_start() -> Any:
     job_id = uuid.uuid4().hex
@@ -355,4 +361,4 @@ def generate() -> str:
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=DEFAULT_FLASK_PORT, debug=False)
+    app.run(host=DEFAULT_FLASK_HOST, port=DEFAULT_FLASK_PORT, debug=False)

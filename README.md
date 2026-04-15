@@ -35,6 +35,57 @@ cd frontend
 npm install
 ```
 
+## Docker Deployment Pipeline
+
+If you want the simplest launch path, use Docker Compose.
+
+1. Copy compose-specific env defaults:
+
+```bash
+cp .env.docker.example .env.docker
+```
+
+2. Start the service:
+
+```bash
+./scripts/docker-up.sh --env-file .env.docker
+```
+
+3. Open:
+
+`http://127.0.0.1:5000` (or the `APP_PORT` you set in `.env.docker`)
+
+Useful commands:
+
+```bash
+./scripts/docker-logs.sh
+./scripts/docker-down.sh
+```
+
+What this pipeline gives you:
+
+- one-command startup (`docker-up.sh`)
+- container health checks via `/healthz`
+- persistent output in local `output/`
+- built-in host access to desktop AnkiConnect via `host.docker.internal`
+
+Development container mode (bind-mount source):
+
+```bash
+docker compose -f docker-compose.dev.yml up --build
+```
+
+### Automated Image Publish
+
+GitHub Actions now builds and publishes a container image to GHCR on:
+
+- pushes to `main`
+- tags like `v0.1`, `v0.2`, etc.
+
+Workflow file:
+
+- `.github/workflows/docker-release.yml`
+
 ## Config Files And Presets
 
 This project supports env-style config files with `ANKI_AUTOFILLER_*` keys.
@@ -193,6 +244,12 @@ Your installed add-on exposes a `Pitch Accent` menu in Anki and an editor toolba
 - `templates/spa.html`: React SPA mount page
 - `frontend/`: Vite + React source and build config
 - `scripts/dev.py`: one-command local dev launcher (Vite + Flask)
+- `Dockerfile`: container image definition
+- `docker-compose.yml`: default deployment stack
+- `docker-compose.dev.yml`: bind-mounted dev container stack
+- `scripts/docker-up.sh`: one-command Docker startup
+- `scripts/docker-down.sh`: stop/remove Docker stack
+- `scripts/docker-logs.sh`: follow container logs
 - `presets/`: reusable env-style config presets
 
 ## Notes
