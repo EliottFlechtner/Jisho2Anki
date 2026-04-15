@@ -1,4 +1,4 @@
-"""Backward-compatible CLI module wrapper."""
+"""Backward-compatible CLI wrapper."""
 
 from autofiller.cli import main
 

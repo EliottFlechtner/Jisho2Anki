@@ -1,6 +1,6 @@
-# EXAMPLE: Add New Words To Slang 2026
+# EXAMPLE: Add New Words To Example Deck
 
-This guide shows exactly how to add a new list of words to a new Anki deck called `Slang 2026`.
+This guide shows how to add a new list of words to a new Anki deck called `Example`.
 
 ## Prerequisites
 
@@ -9,7 +9,7 @@ This guide shows exactly how to add a new list of words to a new Anki deck calle
 - In this project, use the virtual environment Python:
 
 ```bash
-/home/shark/Documents/anki-autofiller/.venv/bin/python
+./.venv/bin/python
 ```
 
 ## Option A: Web App (Recommended)
@@ -17,7 +17,7 @@ This guide shows exactly how to add a new list of words to a new Anki deck calle
 1. Start the app:
 
 ```bash
-/home/shark/Documents/anki-autofiller/.venv/bin/python web_app.py
+./.venv/bin/python web_app.py
 ```
 
 2. Open `http://127.0.0.1:5000`.
@@ -28,9 +28,8 @@ This guide shows exactly how to add a new list of words to a new Anki deck calle
 - Optional: enable `Put sentences in separate cards` if you want short vocab answers.
 
 4. In `Advanced` tab:
-- Set `Preset` to `slang2026` (recommended).
-- Optional: set `Env file path` if you keep extra profiles in files.
-- Set `Deck name` to `Slang 2026`.
+- Optional: set `Preset` or `Env file path` if you keep extra profiles in files.
+- Set `Deck name` to `Example`.
 - Keep model as `Japanese (Basic & Reversed)` unless you want another note type.
 - For faster generation, set `Max workers` to `6` to `10`.
 - Keep `Enable AnkiConnect add` checked.
@@ -42,7 +41,7 @@ You will see a live progress area with:
 - completed count (`x / total`)
 - rolling logs
 
-Note: the app auto-creates missing decks, so `Slang 2026` will be created automatically.
+Note: the app auto-creates missing decks, so `Example` will be created automatically.
 
 ## Option B: CLI (Fast + Scriptable)
 
@@ -51,28 +50,26 @@ Note: the app auto-creates missing decks, so `Slang 2026` will be created automa
 2. Run:
 
 ```bash
-/home/shark/Documents/anki-autofiller/.venv/bin/python anki_autofiller.py \
-  --preset slang2026 \
+./.venv/bin/python anki_autofiller.py \
   --input words.txt \
   --output anki_import.tsv \
   --include-header \
   --anki-connect \
-  --deck-name "Slang 2026" \
+  --deck-name "Example" \
   --model-name "Japanese (Basic & Reversed)" \
   --field-word "Expression" \
   --field-meaning "Meaning" \
   --field-reading "Reading" \
   --sentence-count 1 \
   --max-workers 8 \
-  --tags "slang2026,autofill"
+  --tags "example,autofill"
 ```
 
 ### Optional: add your own env file overrides
 
 ```bash
-/home/shark/Documents/anki-autofiller/.venv/bin/python anki_autofiller.py \
-  --preset slang2026 \
-  --env-file configs/my-slang.env \
+./.venv/bin/python anki_autofiller.py \
+  --env-file configs/my-sample.env \
   --anki-connect
 ```
 
@@ -82,7 +79,7 @@ Add these flags:
 
 ```bash
   --separate-sentence-cards \
-  --sentence-deck-name "Slang 2026::Examples" \
+  --sentence-deck-name "Example::Examples" \
   --sentence-model-name "Basic" \
   --sentence-front-field "Front" \
   --sentence-back-field "Back"

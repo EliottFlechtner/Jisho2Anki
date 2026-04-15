@@ -45,15 +45,12 @@ CLI config precedence is:
 6. `.env`
 7. hardcoded defaults
 
-Built-in presets:
-
-- `slang2026`
-- `fast-import`
+Built-in presets live in `presets/`.
 
 Example:
 
 ```bash
-python3 anki_autofiller.py --preset slang2026 --env-file configs/my-run.env --anki-connect
+python3 anki_autofiller.py --env-file configs/my-run.env --anki-connect
 ```
 
 ## Quick Start (Web UI)
@@ -131,7 +128,7 @@ python3 anki_autofiller.py \
   --input words.txt \
   --output anki_import.tsv \
   --anki-connect \
-  --deck-name "Keio::TestApp" \
+  --deck-name "Example" \
   --model-name "Japanese (Basic & Reversed)" \
   --field-word "Expression" \
   --field-meaning "Meaning" \
@@ -139,9 +136,9 @@ python3 anki_autofiller.py \
   --tags "jp,vocab,autofill"
 ```
 
-The web UI defaults the deck to `Keio::TestApp` and the model to `Japanese (Basic & Reversed)`.
+The docs and example config use the `Example` deck and the model `Japanese (Basic & Reversed)`.
 
-For a complete end-to-end example that creates and fills a new deck named `Slang 2026`, see `EXAMPLE.md`.
+For a complete end-to-end example that creates and fills a new deck named `Example`, see `EXAMPLE.md`.
 
 ## Pitch Accent Add-On
 
