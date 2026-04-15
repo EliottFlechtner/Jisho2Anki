@@ -17,9 +17,6 @@ RUN python -m pip install --no-cache-dir --retries ${PIP_RETRIES} --timeout ${PI
 COPY autofiller ./autofiller
 COPY templates ./templates
 COPY presets ./presets
-COPY web_app.py ./web_app.py
-COPY anki_autofiller.py ./anki_autofiller.py
-COPY cli.py ./cli.py
 
 RUN useradd --create-home --uid 10001 appuser
 USER appuser
@@ -33,4 +30,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import sys, urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/healthz', timeout=3); sys.exit(0)"
 
-CMD ["python", "web_app.py"]
+CMD ["python", "-m", "autofiller.web_app"]

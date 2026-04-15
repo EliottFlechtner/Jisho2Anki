@@ -17,4 +17,4 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./:/app
-    command: ["python", "web_app.py"]
+    command: ["python", "-m", "autofiller.web_app"]
