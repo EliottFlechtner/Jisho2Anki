@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from models import CardRow
+from .models import CardRow
 
 
 def read_words_from_file(input_path: Path) -> list[str]:

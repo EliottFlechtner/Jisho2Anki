@@ -4,9 +4,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
-from jisho_client import JishoClient
-from models import CardRow, ExampleSentence, SearchCandidate, SentenceCardRow
-from pitch_accent import enrich_html_with_pitch
+from .jisho_client import JishoClient
+from .models import CardRow, ExampleSentence, SearchCandidate, SentenceCardRow
+from .pitch_accent import enrich_html_with_pitch
 
 
 def format_sentences(sentences: list[ExampleSentence]) -> str:

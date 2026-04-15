@@ -4,7 +4,7 @@
 The implementation now lives in smaller modules for readability.
 """
 
-from cli import main
+from autofiller.cli import main
 
 
 if __name__ == "__main__":

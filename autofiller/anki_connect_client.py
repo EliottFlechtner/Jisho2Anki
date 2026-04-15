@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import urllib.request
 
-from models import CardRow, SentenceCardRow
+from .models import CardRow, SentenceCardRow
 
 
 def invoke(url: str, action: str, params: dict) -> object:

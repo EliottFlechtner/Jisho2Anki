@@ -153,14 +153,12 @@ Your installed add-on exposes a `Pitch Accent` menu in Anki and an editor toolba
 
 ## Project Structure
 
+- `autofiller/`: core package with CLI, web app, and service modules
 - `anki_autofiller.py`: backward-compatible CLI entrypoint
-- `cli.py`: CLI argument parsing and orchestration
-- `web_app.py`: local Flask UI
-- `pipeline.py`: card-building pipeline
-- `jisho_client.py`: Jisho lookup + sentence scraping
-- `anki_connect_client.py`: AnkiConnect calls
-- `io_utils.py`: word parsing and TSV writing
-- `models.py`: shared dataclasses
+- `cli.py`: backward-compatible CLI wrapper
+- `web_app.py`: backward-compatible web wrapper
+- `templates/`: Flask templates
+- `presets/`: reusable env-style config presets
 
 ## Notes
 

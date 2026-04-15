@@ -7,7 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from models import ExampleSentence, SearchCandidate
+from .models import ExampleSentence, SearchCandidate
 
 JISHO_API = "https://jisho.org/api/v1/search/words?keyword={query}"
 
