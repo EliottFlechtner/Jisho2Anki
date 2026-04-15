@@ -1,3 +1,5 @@
+"""Integration-style tests for Flask API endpoints and async job wiring."""
+
 from __future__ import annotations
 
 import unittest
@@ -19,7 +21,10 @@ except ModuleNotFoundError as exc:
     "Flask dependency missing for web_app tests. Install requirements or run make test-docker.",
 )
 class WebApiEndpointTests(unittest.TestCase):
+    """Verify API contracts for health, bootstrap, settings, and job lifecycle."""
+
     def test_healthz(self) -> None:
+        """Health endpoint should return a minimal ok payload."""
         app = web_app_module.app
         with app.test_client() as client:
             response = client.get("/healthz")
@@ -28,6 +33,7 @@ class WebApiEndpointTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"status": "ok"})
 
     def test_bootstrap_returns_defaults_and_presets(self) -> None:
+        """Bootstrap endpoint should expose defaults and preset names for the SPA."""
         app = web_app_module.app
 
         with (
@@ -49,6 +55,7 @@ class WebApiEndpointTests(unittest.TestCase):
         self.assertEqual(payload["presets"], ["balanced", "safe-api"])
 
     def test_settings_preview_uses_request_preset_and_env(self) -> None:
+        """Settings preview should forward request preset/env values into loader."""
         app = web_app_module.app
 
         with (
@@ -75,6 +82,7 @@ class WebApiEndpointTests(unittest.TestCase):
         )
 
     def test_generate_route_returns_410(self) -> None:
+        """Legacy route should stay explicitly disabled with HTTP 410."""
         app = web_app_module.app
         with app.test_client() as client:
             response = client.post("/generate")
@@ -84,9 +92,12 @@ class WebApiEndpointTests(unittest.TestCase):
         self.assertIn("Legacy /generate route", payload["error"])
 
     def test_start_and_status_with_synchronous_thread(self) -> None:
+        """Job start/status should complete in-process when thread is patched immediate."""
         app = web_app_module.app
 
         class _ImmediateThread:
+            """Thread test double that runs target synchronously in `start()`."""
+
             def __init__(self, target, args, daemon):
                 self._target = target
                 self._args = args
@@ -122,9 +133,12 @@ class WebApiEndpointTests(unittest.TestCase):
             self.assertTrue(payload["preview"])
 
     def test_start_and_status_error_path(self) -> None:
+        """Failed build jobs should transition into the `error` status payload."""
         app = web_app_module.app
 
         class _ImmediateThread:
+            """Thread test double that runs target synchronously in `start()`."""
+
             def __init__(self, target, args, daemon):
                 self._target = target
                 self._args = args
@@ -152,6 +166,7 @@ class WebApiEndpointTests(unittest.TestCase):
             self.assertEqual(payload["error"], "boom")
 
     def test_status_not_found(self) -> None:
+        """Unknown job IDs should return 404 with a stable error shape."""
         app = web_app_module.app
         with app.test_client() as client:
             response = client.get("/api/status/does-not-exist")

@@ -22,10 +22,12 @@ DEFAULT_COMMENT_END = "accent_end"
 
 
 def _to_katakana(text: str) -> str:
+    """Convert hiragana characters to katakana while preserving other characters."""
     return "".join(chr(ord(ch) + 96) if "ぁ" <= ch <= "ゔ" else ch for ch in text)
 
 
 def _is_katakana(text: str) -> bool:
+    """Heuristically determine whether a string is predominantly katakana."""
     if not text:
         return False
     count = sum(1 for ch in text if ch == "ー" or "ァ" <= ch <= "ヴ")
@@ -33,11 +35,13 @@ def _is_katakana(text: str) -> bool:
 
 
 def _clean_orth(text: str) -> str:
+    """Normalize orthography strings used as pitch dictionary keys."""
     text = re.sub(r"[()△×･〈〉{}]", "", text)
     return text.replace("…", "〜")
 
 
 def _strip_html(text: str) -> str:
+    """Strip HTML tags/entities and collapse whitespace in a safe, simple way."""
     text = re.sub(r"<[^>]+>", "", text)
     text = html.unescape(text)
     text = re.sub(r"\s+", " ", text)
@@ -45,6 +49,7 @@ def _strip_html(text: str) -> str:
 
 
 def _clean_expression(text: str) -> str:
+    """Extract the primary Japanese run from a possibly decorated expression field."""
     text = _strip_html(text)
     text = _BRACKETED_RE.sub("", text)
     text = _VARIATION_SELECTORS_RE.sub("", text)
@@ -53,11 +58,13 @@ def _clean_expression(text: str) -> str:
 
 
 def _reading_hint(text: str) -> str:
+    """Extract a hiragana hint from reading text for candidate disambiguation."""
     match = _HIRA_RE.search(text or "")
     return match.group(0) if match else ""
 
 
 def _addon_roots() -> list[Path]:
+    """Return candidate addon directories, preferring explicit env override first."""
     home = Path.home()
     roots = [
         home / ".local/share/Anki2/addons21" / ADDON_ID,
@@ -76,6 +83,7 @@ def _load_pitch_dict() -> dict[str, list[tuple[str, str]]]:
     combined: dict[str, list[tuple[str, str]]] = {}
 
     def add_entry(orth: str, hira: str, patt: str) -> None:
+        """Add a unique `(reading, pattern)` tuple for an orthography key."""
         if orth not in combined:
             combined[orth] = []
         entry = (hira, patt)
@@ -85,6 +93,7 @@ def _load_pitch_dict() -> dict[str, list[tuple[str, str]]]:
     for root in _addon_roots():
         user_db = root / "user_pitchdb.csv"
         if user_db.exists():
+            # User dictionary entries take precedence in ordering because they are loaded first.
             with user_db.open(encoding="utf-8") as handle:
                 for raw_line in handle:
                     raw_line = raw_line.strip()
@@ -98,6 +107,7 @@ def _load_pitch_dict() -> dict[str, list[tuple[str, str]]]:
 
         wadoku_db = root / "wadoku_pitchdb.csv"
         if wadoku_db.exists():
+            # Wadoku entries can contain multiple orthographies and accent variants.
             with wadoku_db.open(encoding="utf-8") as handle:
                 for raw_line in handle:
                     raw_line = raw_line.strip()
@@ -122,6 +132,7 @@ def _load_pitch_dict() -> dict[str, list[tuple[str, str]]]:
 def _select_best_pattern(
     reading_hint: str, candidates: list[tuple[str, str]]
 ) -> tuple[str, str]:
+    """Choose the candidate that appears earliest in reading hint text."""
     best = candidates[0]
     best_pos = 10**9
     for hira, patt in candidates:
@@ -150,6 +161,7 @@ def pitch_pattern(expression: str, reading: str) -> tuple[str, str] | None:
 
 
 def _morae(word: str) -> list[str]:
+    """Split kana into mora-like units, combining small kana digraphs."""
     morae: list[str] = []
     combo = {
         "ゃ",
@@ -181,6 +193,7 @@ def _morae(word: str) -> list[str]:
 
 
 def _draw_circle(x: int, y: int, hollow: bool) -> str:
+    """Render one pitch point circle, optionally hollow for trailing pattern points."""
     outer = f'<circle r="5" cx="{x}" cy="{y}" style="opacity:1;fill:#000;" />'
     if hollow:
         outer += f'<circle r="3.25" cx="{x}" cy="{y}" style="opacity:1;fill:#fff;" />'
@@ -188,6 +201,7 @@ def _draw_circle(x: int, y: int, hollow: bool) -> str:
 
 
 def _draw_text(x: int, mora: str) -> str:
+    """Render mora text label, compacting two-char morae with reduced second glyph."""
     if len(mora) == 1:
         return f'<text x="{x}" y="67.5" style="font-size:20px;font-family:sans-serif;fill:#000;">{mora}</text>'
     return (
@@ -197,6 +211,7 @@ def _draw_text(x: int, mora: str) -> str:
 
 
 def _draw_path(x: int, y: int, step_width: int, direction: str) -> str:
+    """Render the connecting line segment between adjacent pitch points."""
     if direction == "s":
         delta = f"{step_width},0"
     elif direction == "u":
@@ -223,6 +238,7 @@ def render_pitch_svg(word: str, pattern: str) -> str:
 
     for index, mora in enumerate(morae):
         x = margin_lr + (index * step_width)
+        # Shift labels slightly left so circles align near mora centers visually.
         svg_parts.append(_draw_text(x - 11, mora))
 
     previous: tuple[int, int] | None = None

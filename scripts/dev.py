@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Local development launcher for Vite + Flask with dynamic free ports.
+
+This script starts the frontend dev server first, waits for readiness, then starts
+the Flask app configured to proxy/load assets from that Vite URL.
+"""
+
 from __future__ import annotations
 
 import os
@@ -14,12 +20,14 @@ FLASK_ENTRYPOINT = ROOT / "web_app.py"
 
 
 def find_free_port() -> int:
+    """Ask the OS for a currently free localhost TCP port."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
 def terminate_process(process: subprocess.Popen[str] | None) -> None:
+    """Stop a process gracefully first, then force-kill after timeout."""
     if process is None or process.poll() is not None:
         return
     process.terminate()
@@ -30,6 +38,7 @@ def terminate_process(process: subprocess.Popen[str] | None) -> None:
 
 
 def wait_for_port(host: str, port: int, timeout_seconds: float = 10.0) -> bool:
+    """Poll a host/port until it accepts TCP connections or times out."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -44,6 +53,7 @@ def wait_for_port(host: str, port: int, timeout_seconds: float = 10.0) -> bool:
 
 
 def main() -> int:
+    """Start frontend and backend dev servers and forward exit status."""
     frontend_port = find_free_port()
     frontend_url = f"http://127.0.0.1:{frontend_port}"
 
@@ -67,6 +77,7 @@ def main() -> int:
         if frontend_process.poll() is not None:
             return frontend_process.returncode or 1
 
+        # Gate Flask startup on Vite readiness so Flask never points to a dead dev URL.
         if not wait_for_port("127.0.0.1", frontend_port):
             print("Timed out waiting for the Vite dev server to open its port.")
             return 1
@@ -85,8 +96,10 @@ def main() -> int:
 
         return flask_process.wait()
     except KeyboardInterrupt:
+        # Align with shell conventions for Ctrl+C exits.
         return 130
     finally:
+        # Always cleanup both child processes on exit/error paths.
         terminate_process(flask_process)
         terminate_process(frontend_process)
 

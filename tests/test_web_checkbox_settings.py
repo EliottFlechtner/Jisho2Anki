@@ -1,3 +1,5 @@
+"""Tests for checkbox parsing and settings fallback behavior in web form handling."""
+
 from __future__ import annotations
 
 import unittest
@@ -17,6 +19,7 @@ except ModuleNotFoundError as exc:
 
 
 def _base_settings() -> dict[str, object]:
+    """Return a deterministic baseline settings payload for web form tests."""
     return {
         "output_path": "anki_import.tsv",
         "include_header": True,
@@ -48,7 +51,10 @@ def _base_settings() -> dict[str, object]:
     "Flask dependency missing for web_app tests. Install requirements or run make test-docker.",
 )
 class CheckboxBehaviorTests(unittest.TestCase):
+    """Validate checkbox coercion and effective settings passed into build/export flows."""
+
     def test_bool_parser_accepts_true_false_forms(self) -> None:
+        """Boolean parser should accept common truthy/falsy textual forms."""
         self.assertTrue(_bool_from_form("true"))
         self.assertTrue(_bool_from_form("on"))
         self.assertTrue(_bool_from_form("1"))
@@ -60,6 +66,7 @@ class CheckboxBehaviorTests(unittest.TestCase):
         self.assertFalse(_bool_from_form("unexpected", default=False))
 
     def test_build_rows_uses_settings_default_when_checkbox_missing(self) -> None:
+        """Missing checkbox fields should fall back to resolved settings defaults."""
         settings = _base_settings()
         form_data = {
             "words": "食べる",
@@ -88,6 +95,7 @@ class CheckboxBehaviorTests(unittest.TestCase):
         self.assertFalse(kwargs["include_pitch_accent"])
 
     def test_legacy_on_off_values_are_honored(self) -> None:
+        """Legacy `on`/`off` values should still map to the intended booleans."""
         settings = _base_settings()
         form_data = {
             "words": "勉強",
@@ -125,6 +133,7 @@ class CheckboxBehaviorTests(unittest.TestCase):
         add_rows_mock.assert_not_called()
 
     def test_build_rows_receives_checkbox_overrides(self) -> None:
+        """Explicit checkbox form values should override resolved defaults."""
         settings = _base_settings()
         form_data = {
             "words": "食べる",
@@ -164,6 +173,7 @@ class CheckboxBehaviorTests(unittest.TestCase):
         add_rows_mock.assert_not_called()
 
     def test_anki_connect_respects_allow_duplicates_false(self) -> None:
+        """`allow_duplicates=false` should be forwarded to both note submission paths."""
         settings = _base_settings()
         form_data = {
             "words": "試合",

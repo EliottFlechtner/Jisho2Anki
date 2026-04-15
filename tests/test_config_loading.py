@@ -1,3 +1,5 @@
+"""Tests for configuration discovery, precedence, and type coercion."""
+
 from __future__ import annotations
 
 import os
@@ -10,13 +12,17 @@ from autofiller import config
 
 
 class ConfigLoadingTests(unittest.TestCase):
+    """Validate behavior of `autofiller.config` helpers and settings merge flow."""
+
     def test_resolve_preset_file_rejects_path_traversal(self) -> None:
+        """Preset names should reject path traversal or nested path separators."""
         with self.assertRaises(ValueError):
             config._resolve_preset_file("../bad")
         with self.assertRaises(ValueError):
             config._resolve_preset_file("dir/name")
 
     def test_available_presets_sorted(self) -> None:
+        """Available preset names should include only `.env` files sorted lexicographically."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "presets").mkdir()
@@ -32,6 +38,7 @@ class ConfigLoadingTests(unittest.TestCase):
                 os.chdir(old_cwd)
 
     def test_load_settings_precedence_and_type_coercion(self) -> None:
+        """Settings should follow documented precedence and coerce primitive value types."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "presets").mkdir()

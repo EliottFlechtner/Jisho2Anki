@@ -1,3 +1,5 @@
+"""Behavioral tests for row generation, formatting, and interactive selection."""
+
 from __future__ import annotations
 
 import unittest
@@ -13,10 +15,14 @@ from autofiller.pipeline import (
 
 
 class PipelineBehaviorTests(unittest.TestCase):
+    """Cover pipeline behavior for sentence/pitch options and ordering guarantees."""
+
     def test_format_sentences_empty(self) -> None:
+        """No sentences should yield an empty formatting payload."""
         self.assertEqual(format_sentences([]), "")
 
     def test_format_sentences_join(self) -> None:
+        """Sentence formatting should include all entries separated by `<br>`."""
         sentences = [
             ExampleSentence(japanese="食べる。", english="I eat."),
             ExampleSentence(japanese="勉強する。", english="I study."),
@@ -27,6 +33,7 @@ class PipelineBehaviorTests(unittest.TestCase):
         self.assertIn("<br>", formatted)
 
     def test_default_interactive_selector_handles_retry_and_zero(self) -> None:
+        """Selector should retry invalid input and allow explicit blank selection via `0`."""
         candidates = [
             SearchCandidate(meaning="m1", reading="r1"),
             SearchCandidate(meaning="m2", reading="r2"),
@@ -39,6 +46,7 @@ class PipelineBehaviorTests(unittest.TestCase):
         self.assertEqual(selected.reading, "")
 
     def test_build_word_result_respects_sentence_and_pitch_toggles(self) -> None:
+        """Word result should honor sentence inclusion and pitch-accent toggles."""
         candidates = [SearchCandidate(meaning="eat", reading="たべる")]
         sentences = [ExampleSentence(japanese="パンを食べる。", english="I eat bread.")]
 
@@ -70,6 +78,7 @@ class PipelineBehaviorTests(unittest.TestCase):
         self.assertIn("<svg>", reading)
 
     def test_build_word_result_creates_separate_sentence_cards(self) -> None:
+        """Separate sentence card mode should emit companion `SentenceCardRow` entries."""
         candidates = [SearchCandidate(meaning="match", reading="しあい")]
         sentences = [ExampleSentence(japanese="試合だ。", english="It is a match.")]
 
@@ -93,6 +102,8 @@ class PipelineBehaviorTests(unittest.TestCase):
         self.assertIn("Word: 試合", sentence_rows[0].back)
 
     def test_build_rows_preserves_input_order(self) -> None:
+        """Parallel builds should still preserve original input order in final rows."""
+
         def fake_build_word_result(*, word, **_kwargs):
             return (
                 CardRow(
@@ -125,6 +136,8 @@ class PipelineBehaviorTests(unittest.TestCase):
         )
 
     def test_build_rows_sequential_progress_and_sleep(self) -> None:
+        """Sequential mode should emit progress and respect pause-based sleeping."""
+
         def fake_build_word_result(*, word, **_kwargs):
             return (
                 CardRow(word=word, meaning=f"m-{word}", reading=f"r-{word}"),
@@ -159,6 +172,7 @@ class PipelineBehaviorTests(unittest.TestCase):
         sleep_mock.assert_called()
 
     def test_build_rows_interactive_uses_selector(self) -> None:
+        """Interactive mode should defer candidate choice to the injected selector."""
         candidates = [
             SearchCandidate(meaning="first", reading="f"),
             SearchCandidate(meaning="second", reading="s"),
