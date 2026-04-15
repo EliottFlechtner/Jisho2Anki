@@ -1,5 +1,10 @@
 # Anki Autofiller
 
+[![Compose Smoke](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/compose-smoke.yml/badge.svg)](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/compose-smoke.yml)
+[![Docker Release](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/docker-release.yml/badge.svg)](https://github.com/EliottFlechtner/anki-autofiller/actions/workflows/docker-release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/EliottFlechtner/anki-autofiller?display_name=tag)](https://github.com/EliottFlechtner/anki-autofiller/releases)
+[![GHCR Image](https://img.shields.io/badge/GHCR-ghcr.io%2Feliottflechtner%2Fanki--autofiller-2ea44f)](https://ghcr.io/eliottflechtner/anki-autofiller)
+
 Small tool to speed up Japanese vocab note creation for Anki.
 
 Input is a word list (one word per line). Output is cards with fields:
