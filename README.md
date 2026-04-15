@@ -40,6 +40,10 @@ cd frontend
 npm install
 ```
 
+## Windows Dev Notes
+
+For Windows setup and run commands (Docker Desktop and no-Docker paths), see `WINDOWS_DEV.md`.
+
 ## Docker Deployment Pipeline
 
 If you want the simplest launch path, use Docker Compose.
