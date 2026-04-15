@@ -357,7 +357,7 @@ def generate() -> str:
             }
         ),
         410,
-    )
+    )  # type: ignore
 
 
 if __name__ == "__main__":
