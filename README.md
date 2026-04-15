@@ -108,7 +108,6 @@ To keep answers short, use `--separate-sentence-cards` so sentence examples are 
 ## AnkiConnect Setup (What To Do)
 
 AnkiConnect talks to the desktop Anki app locally, so you do not need to provide a mail/password in an `.env` file for this workflow.
-- load a preset from `presets/*.env` and optional custom env file path
 
 1. Open Anki.
 2. Go to `Tools -> Add-ons -> Get Add-ons...`.

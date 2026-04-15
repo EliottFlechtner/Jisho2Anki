@@ -23,7 +23,9 @@ JOBS: dict[str, dict[str, Any]] = {}
 JOB_LOCK = threading.Lock()
 
 
-def _bool_from_form(value: str | None) -> bool:
+def _bool_from_form(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
     return value == "on"
 
 
@@ -77,9 +79,18 @@ def _build_from_form(
     max_workers = int(
         _value_from_form(form_data, "max_workers", str(settings["max_workers"]))
     )
-    include_sentences = _bool_from_form(form_data.get("include_sentences"))
-    include_pitch_accent = _bool_from_form(form_data.get("include_pitch_accent"))
-    separate_sentence_cards = _bool_from_form(form_data.get("separate_sentence_cards"))
+    include_sentences = _bool_from_form(
+        form_data.get("include_sentences"),
+        default=bool(settings["include_sentences"]),
+    )
+    include_pitch_accent = _bool_from_form(
+        form_data.get("include_pitch_accent"),
+        default=bool(settings["include_pitch_accent"]),
+    )
+    separate_sentence_cards = _bool_from_form(
+        form_data.get("separate_sentence_cards"),
+        default=bool(settings["separate_sentence_cards"]),
+    )
 
     rows, sentence_rows = build_rows(
         words=words,
@@ -100,11 +111,14 @@ def _build_from_form(
         str(settings["output_path"]),
     )
     output_path = Path(output_path_raw)
-    include_header = _bool_from_form(form_data.get("include_header"))
+    include_header = _bool_from_form(
+        form_data.get("include_header"),
+        default=bool(settings["include_header"]),
+    )
     write_tsv(rows=rows, output_path=output_path, include_header=include_header)
 
     anki_summary = ""
-    if _bool_from_form(form_data.get("anki_connect")):
+    if _bool_from_form(form_data.get("anki_connect"), default=bool(settings["anki_connect"])):
         anki_url = _value_from_form(form_data, "anki_url", str(settings["anki_url"]))
         deck_name = _value_from_form(form_data, "deck_name", str(settings["deck_name"]))
         model_name = _value_from_form(
@@ -123,7 +137,10 @@ def _build_from_form(
             "field_reading",
             str(settings["field_reading"]),
         )
-        allow_duplicates = _bool_from_form(form_data.get("allow_duplicates"))
+        allow_duplicates = _bool_from_form(
+            form_data.get("allow_duplicates"),
+            default=bool(settings["allow_duplicates"]),
+        )
         tags_raw = _value_from_form(form_data, "tags", str(settings["tags"]))
         tags = [tag.strip() for tag in tags_raw.split(",") if tag.strip()]
         sentence_deck_name = _value_from_form(
