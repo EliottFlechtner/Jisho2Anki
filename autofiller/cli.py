@@ -132,12 +132,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--field-word",
         default=defaults["field_word"],
-        help="Expression field name in your Anki note type (default: Expression).",
+        help="Word/Kanji field name in your Anki note type (default: Word).",
     )
     parser.add_argument(
         "--field-meaning",
         default=defaults["field_meaning"],
-        help="Meaning field name in your Anki note type (default: Meaning).",
+        help="Translation field name in your Anki note type (default: Translation).",
     )
     parser.add_argument(
         "--field-reading",

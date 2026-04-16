@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_DECK_NAME = "Keio::TestApp"
-DEFAULT_MODEL_NAME = "Japanese (Basic & Reversed)"
-DEFAULT_EXPRESSION_FIELD = "Expression"
+DEFAULT_MODEL_NAME = "Jisho2Anki::Vocab (Kanji-Reading-Translation)"
+DEFAULT_EXPRESSION_FIELD = "Word"
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "input": "words.txt",
@@ -27,7 +27,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "deck_name": DEFAULT_DECK_NAME,
     "model_name": DEFAULT_MODEL_NAME,
     "field_word": DEFAULT_EXPRESSION_FIELD,
-    "field_meaning": "Meaning",
+    "field_meaning": "Translation",
     "field_reading": "Reading",
     "tags": "",
     "allow_duplicates": False,
