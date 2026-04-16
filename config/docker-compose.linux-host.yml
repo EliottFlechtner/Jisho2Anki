@@ -1,0 +1,6 @@
+services:
+  jisho2anki:
+    network_mode: host
+    ports: []
+    environment:
+      ANKI_JISHO2ANKI_ANKI_URL: ${ANKI_JISHO2ANKI_ANKI_URL:-http://127.0.0.1:8765}
