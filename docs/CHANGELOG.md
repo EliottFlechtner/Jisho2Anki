@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-04-16
+
+### Added
+- **Project reorganization**: Cleaner structure with `docs/` and `config/` directories for better navigation
+  - All documentation centralized in `docs/` (CHANGELOG, CONTRIBUTING, TROUBLESHOOTING, PROJECT_STRUCTURE, etc.)
+  - All Docker/config files centralized in `config/` (Dockerfile, docker-compose variants, .env files)
+- **Comprehensive documentation**:
+  - `CONTRIBUTING.md`: Developer setup, coding standards, branching, testing guidelines
+  - `TROUBLESHOOTING.md`: Common issues with solutions (Docker, AnkiConnect, Windows, networking)
+  - `PROJECT_STRUCTURE.md`: Directory overview, module descriptions, key concepts
+- **GitHub Actions CI/CD workflows**:
+  - Windows smoke test workflow for integration testing
+  - Windows unit test workflow for test suite validation
+  - Enhanced diagnostics and error handling in smoke tests
+- **Docker Compose enhancements**:
+  - Linux host support via `docker-compose.linux-host.yml` override
+  - Improved environment variable handling across platforms
+- **Anki model improvements**:
+  - Enhanced Anki model creation and CLI field descriptions
+  - New unit tests for AnkiConnect note submission and model creation
+- **Python variable consistency**: Updated Makefile and scripts to use `PYTHON` variable throughout
+
+### Changed
+- Makefile Python detection now uses OS-aware logic (Windows vs Unix)
+  - Windows: Uses `python` directly (assumes PATH configuration)
+  - Unix/Linux: Uses existing conditional detection (python3, python, etc.)
+- Docker volume mount paths corrected after directory reorganization
+- Build process updated to reference new `config/Dockerfile` location
+- CI/CD workflows updated to reflect new directory structure
+
+### Fixed
+- Docker volume mounts: Changed from `./` to `../` to correctly mount repository root
+- Docker build-dev path resolution after config/ reorganization
+- Container startup issues where app files weren't found due to incorrect mounts
+- Cross-platform Python detection on Windows (fixes make command failures)
+- Smoke test diagnostics: Added container status checks and Docker setup verification
+
+### Tested
+- All make targets verified with new directory structure
+- Docker container builds and runs successfully
+- GitHub Actions workflows passing on Windows and Linux
+- AnkiConnect integration tests included
+
 ## [1.0.1] - 2026-04-15
 
 ### Added
