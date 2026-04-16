@@ -1,6 +1,11 @@
 .PHONY: help up down logs ps config dev-up build-dev build-dev-up release-check smoke backup test test-docker
 
-PYTHON ?= $(shell if command -v python3 >/dev/null 2>&1; then echo python3; elif command -v python >/dev/null 2>&1; then echo python; elif command -v py >/dev/null 2>&1; then echo "py -3"; else echo python3; fi)
+# Windows-compatible Python detection
+ifeq ($(OS),Windows_NT)
+    PYTHON ?= python
+else
+    PYTHON ?= $(shell if command -v python3 >/dev/null 2>&1; then echo python3; elif command -v python >/dev/null 2>&1; then echo python; else echo python3; fi)
+endif
 
 help:
 	@echo "Targets:"
