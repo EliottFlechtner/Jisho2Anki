@@ -49,6 +49,7 @@ class PipelineBehaviorTests(unittest.TestCase):
         """Word result should honor sentence inclusion and pitch-accent toggles."""
         candidates = [SearchCandidate(meaning="eat", reading="たべる")]
         sentences = [ExampleSentence(japanese="パンを食べる。", english="I eat bread.")]
+        pitch_html = "<!-- accent_start --><svg></svg><!-- accent_end -->"
 
         with (
             patch(
@@ -57,7 +58,7 @@ class PipelineBehaviorTests(unittest.TestCase):
             ),
             patch(
                 "autofiller.pipeline.enrich_html_with_pitch",
-                return_value="<!-- accent_start --><svg></svg><!-- accent_end -->",
+                return_value=pitch_html,
             ),
         ):
             row, sentence_rows, reading, plain_meaning = _build_word_result(
@@ -73,9 +74,31 @@ class PipelineBehaviorTests(unittest.TestCase):
 
         self.assertEqual(plain_meaning, "eat")
         self.assertEqual(row.meaning, "eat")
-        self.assertIn("<svg>", row.reading)
+        self.assertEqual(row.reading, pitch_html)
+        self.assertEqual(reading, pitch_html)
         self.assertEqual(sentence_rows, [])
-        self.assertIn("<svg>", reading)
+
+    def test_build_word_result_normalizes_katakana_reading_to_hiragana(self) -> None:
+        """Readings should be normalized to hiragana-only text when pitch mode is off."""
+        candidates = [SearchCandidate(meaning="coffee", reading="コーヒー")]
+
+        with patch(
+            "autofiller.pipeline.JishoClient.search",
+            return_value=(candidates, []),
+        ):
+            row, _sentence_rows, reading, _plain_meaning = _build_word_result(
+                word="珈琲",
+                candidate_limit=3,
+                sentence_count=0,
+                include_sentences=False,
+                separate_sentence_cards=False,
+                include_pitch_accent=False,
+                interactive_review=False,
+                selector=lambda _word, cands: cands[0],
+            )
+
+        self.assertEqual(row.reading, "こーひー")
+        self.assertEqual(reading, "こーひー")
 
     def test_build_word_result_creates_separate_sentence_cards(self) -> None:
         """Separate sentence card mode should emit companion `SentenceCardRow` entries."""
