@@ -9,6 +9,99 @@ import urllib.request
 from .models import CardRow, SentenceCardRow
 
 
+def _field_ref(field_name: str) -> str:
+    """Return an Anki template field reference like `{{Field}}`."""
+    return "{{" + field_name + "}}"
+
+
+def ensure_vocab_model(
+    *,
+    url: str,
+    model_name: str,
+    word_field: str,
+    meaning_field: str,
+    reading_field: str,
+) -> None:
+    """Create a Kanji/Reading/Translation note type when it does not exist.
+
+    The generated model has two card templates so learners can practice both:
+    - word -> reading + translation
+    - word + reading -> translation
+    """
+    existing = invoke(url, "modelNames", {})
+    if isinstance(existing, list) and model_name in existing:
+        return
+
+    word_ref = _field_ref(word_field)
+    reading_ref = _field_ref(reading_field)
+    meaning_ref = _field_ref(meaning_field)
+
+    css = """
+.card {
+  font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  text-align: center;
+  color: #1f2937;
+  background: #ffffff;
+  line-height: 1.5;
+}
+.word {
+  font-size: 2.1em;
+  font-weight: 700;
+  margin: 0.3em 0;
+}
+.reading {
+  font-size: 1.35em;
+  margin-top: 0.35em;
+}
+.meaning {
+  font-size: 1.15em;
+  margin-top: 0.6em;
+}
+.sep {
+  border: none;
+  border-top: 1px solid #d1d5db;
+  margin: 0.8em 0;
+}
+""".strip()
+
+    card_templates = [
+        {
+            "Name": "Word -> Reading+Translation",
+            "Front": ('<div class="word">' + word_ref + "</div>"),
+            "Back": (
+                "{{FrontSide}}"
+                '<hr class="sep">'
+                '<div class="reading">' + reading_ref + "</div>"
+                '<div class="meaning">' + meaning_ref + "</div>"
+            ),
+        },
+        {
+            "Name": "Word+Reading -> Translation",
+            "Front": (
+                '<div class="word">' + word_ref + "</div>"
+                '<div class="reading">' + reading_ref + "</div>"
+            ),
+            "Back": (
+                "{{FrontSide}}"
+                '<hr class="sep">'
+                '<div class="meaning">' + meaning_ref + "</div>"
+            ),
+        },
+    ]
+
+    invoke(
+        url,
+        "createModel",
+        {
+            "modelName": model_name,
+            "inOrderFields": [word_field, reading_field, meaning_field],
+            "css": css,
+            "isCloze": False,
+            "cardTemplates": card_templates,
+        },
+    )
+
+
 def invoke(url: str, action: str, params: dict) -> object:
     """Invoke an AnkiConnect action and return its `result` payload.
 
@@ -83,6 +176,14 @@ def add_rows_to_anki(
     Returns:
         Tuple of `(success_count, failed_count)`.
     """
+    ensure_vocab_model(
+        url=url,
+        model_name=model_name,
+        word_field=word_field,
+        meaning_field=meaning_field,
+        reading_field=reading_field,
+    )
+
     notes: list[dict] = []
     for row in rows:
         notes.append(

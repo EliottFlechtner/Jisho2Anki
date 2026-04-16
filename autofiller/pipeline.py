@@ -11,6 +11,18 @@ from .models import CardRow, ExampleSentence, SearchCandidate, SentenceCardRow
 from .pitch_accent import enrich_html_with_pitch
 
 
+def _to_hiragana(text: str) -> str:
+    """Convert Katakana in `text` to Hiragana, preserving other characters."""
+    chars: list[str] = []
+    for char in text:
+        code = ord(char)
+        if 0x30A1 <= code <= 0x30F6:
+            chars.append(chr(code - 0x60))
+        else:
+            chars.append(char)
+    return "".join(chars)
+
+
 def format_sentences(sentences: list[ExampleSentence]) -> str:
     """Format sentence pairs into the HTML snippet expected by the meaning field.
 
@@ -97,7 +109,7 @@ def _build_word_result(
         selected = SearchCandidate(meaning="", reading="")
 
     meaning = selected.meaning
-    reading = selected.reading
+    reading = _to_hiragana(selected.reading)
 
     if include_sentences and meaning and not separate_sentence_cards:
         sentence_text = format_sentences(sentences)
@@ -120,10 +132,9 @@ def _build_word_result(
     if include_pitch_accent:
         pitch_html = enrich_html_with_pitch(word, reading)
         if pitch_html:
-            if reading:
-                reading = f"{reading}<br><br>{pitch_html}"
-            else:
-                reading = pitch_html
+            # In pitch mode, the reading field should only show the rendered graph,
+            # since the graph already includes the reading text.
+            reading = pitch_html
 
     row = CardRow(word=word, meaning=meaning, reading=reading)
     return row, sentence_rows, reading, selected.meaning
