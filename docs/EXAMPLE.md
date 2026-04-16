@@ -48,7 +48,7 @@ If you want the lower-level manual flow instead, run `cd frontend && npm install
 - Optional: set `Preset` or `Env file path` if you keep extra profiles in files.
 - Click `Load preset defaults` after choosing a preset or env file so the visible fields match what will be submitted.
 - Set `Deck name` to `Example`.
-- Keep model as `Japanese (Basic & Reversed)` unless you want another note type.
+- Keep model as `Jisho2Anki::Vocab (Kanji-Reading-Translation)` unless you want another note type.
 - For faster generation, set `Max workers` to `6` to `10`.
 - Keep `Enable AnkiConnect add` checked.
 
@@ -81,9 +81,9 @@ Preset behavior:
   --include-header \
   --anki-connect \
   --deck-name "Example" \
-  --model-name "Japanese (Basic & Reversed)" \
-  --field-word "Expression" \
-  --field-meaning "Meaning" \
+  --model-name "Jisho2Anki::Vocab (Kanji-Reading-Translation)" \
+  --field-word "Word" \
+  --field-meaning "Translation" \
   --field-reading "Reading" \
   --sentence-count 1 \
   --max-workers 8 \

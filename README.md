@@ -11,19 +11,19 @@ Small tool to speed up Japanese vocab note creation for Anki.
 Input is a word list (one word per line). Output is cards with fields:
 
 1. `Word`
-2. `Meaning`
+2. `Translation`
 3. `Reading`
 
-For your Anki setup, the generator now targets your existing furigana-friendly note type:
+For AnkiConnect mode, the generator now auto-creates and uses this note type when missing:
 
-1. `Japanese (Basic & Reversed)`
-2. Fields: `Expression`, `Meaning`, `Reading`, `Lesson Number`
+1. `Jisho2Anki::Vocab (Kanji-Reading-Translation)`
+2. Fields: `Word`, `Reading`, `Translation`
 
 It can also:
 
 - append Jisho example sentences into `Meaning`
 - split Jisho examples into separate sentence cards
-- auto-generate pitch accent SVG and embed it into `Reading`
+- auto-generate pitch accent SVG and place it in `Reading` (image only)
 - add notes directly to Anki via AnkiConnect
 - run in either CLI mode or local web UI mode
 - use a React + Vite SPA frontend for the web UI
@@ -240,7 +240,7 @@ The web page can:
 
 - save a TSV file
 - optionally push notes directly to Anki through AnkiConnect
-- use the existing Japanese note type by default
+- auto-create and use a dedicated Jisho2Anki vocab note type by default
 - keep pitch accent generation on by default
 - show live generation progress (status, completed count, logs)
 - load preset defaults into the visible form with a single click
@@ -286,7 +286,7 @@ AnkiConnect talks to the desktop Anki app locally, so you do not need to provide
 3. Install AnkiConnect with code `2055492159`.
 4. Restart Anki.
 5. Keep Anki open while running this tool.
-6. In Anki, confirm your note type has fields matching your mapping (`Expression`, `Meaning`, `Reading`, `Lesson Number`).
+6. On first run, the app will create `Jisho2Anki::Vocab (Kanji-Reading-Translation)` automatically if needed.
 
 Optional connection check from terminal:
 
@@ -304,14 +304,14 @@ python3 jisho2anki.py \
   --output anki_import.tsv \
   --anki-connect \
   --deck-name "Example" \
-  --model-name "Japanese (Basic & Reversed)" \
-  --field-word "Expression" \
-  --field-meaning "Meaning" \
+  --model-name "Jisho2Anki::Vocab (Kanji-Reading-Translation)" \
+  --field-word "Word" \
+  --field-meaning "Translation" \
   --field-reading "Reading" \
   --tags "jp,vocab,autofill"
 ```
 
-The docs and example config use the `Example` deck and the model `Japanese (Basic & Reversed)`.
+The docs and example config use the `Example` deck and the model `Jisho2Anki::Vocab (Kanji-Reading-Translation)`.
 
 For a complete end-to-end example that creates and fills a new deck named `Example`, see `EXAMPLE.md`.
 

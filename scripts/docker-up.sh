@@ -15,9 +15,16 @@ if [[ -f .env.docker ]]; then
 	COMPOSE_ARGS+=(--env-file .env.docker)
 fi
 
+LINUX_HOST_NETWORK="${ANKI_JISHO2ANKI_LINUX_HOST_NETWORK:-}"
+if [[ -z "$LINUX_HOST_NETWORK" && -f .env.docker ]]; then
+	LINUX_HOST_NETWORK="$(grep -E '^ANKI_JISHO2ANKI_LINUX_HOST_NETWORK=' .env.docker | tail -n1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" | tr -d '[:space:]')"
+fi
+
 # Add Windows-specific overrides if on Windows
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
 	COMPOSE_ARGS+=(-f config/docker-compose.yml -f config/docker-compose.windows.yml)
+elif [[ "$OSTYPE" == linux-gnu* && "$LINUX_HOST_NETWORK" =~ ^(1|true|yes|on)$ ]]; then
+	COMPOSE_ARGS+=(-f config/docker-compose.yml -f config/docker-compose.linux-host.yml)
 else
 	COMPOSE_ARGS+=(-f config/docker-compose.yml)
 fi
