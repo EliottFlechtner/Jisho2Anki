@@ -894,6 +894,45 @@ def api_review_items(job_id: str) -> Any:
     return jsonify({"review_items": review_items})
 
 
+@app.get("/api/search-candidates")
+def api_search_candidates() -> Any:
+    """Search Jisho for a single word and return review candidate options.
+
+    Query parameters:
+        word: The word to search for.
+        candidate_limit: Maximum number of candidates (default 1).
+        include_pitch_accent: Whether to include pitch accent SVG (default false).
+        pitch_accent_theme: Theme for pitch accent SVG (default 'dark').
+
+    Returns:
+        JSON response containing a single review item.
+    """
+    word = request.args.get("word", "").strip()
+    if not word:
+        return jsonify({"error": "word parameter required"}), 400
+
+    try:
+        candidate_limit = int(request.args.get("candidate_limit", "1"))
+        include_pitch_accent = _bool_from_form(request.args.get("include_pitch_accent"))
+        pitch_accent_theme = request.args.get("pitch_accent_theme", "dark")
+
+        review_items = _build_review_items(
+            words=[word],
+            candidate_limit=max(candidate_limit, 1),
+            include_pitch_accent=include_pitch_accent,
+            pitch_accent_theme=pitch_accent_theme,
+            generated_rows=[],
+        )
+
+        if review_items:
+            return jsonify({"review_item": review_items[0]})
+        else:
+            return jsonify({"review_item": None}), 404
+
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+
 @app.post("/generate")
 def generate() -> str:
     """Legacy endpoint retained as explicit API migration notice.

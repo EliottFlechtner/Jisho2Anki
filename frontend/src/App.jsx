@@ -96,6 +96,7 @@ export default function App() {
   const [reviewItems, setReviewItems] = useState([]);
   const [reviewChoices, setReviewChoices] = useState([]);
   const [reviewIndex, setReviewIndex] = useState(0);
+  const [addedBatchWords, setAddedBatchWords] = useState(new Set());
   const [confirmationJobId, setConfirmationJobId] = useState('');
   const [confirmingAdd, setConfirmingAdd] = useState(false);
   const [jobId, setJobId] = useState('');
@@ -425,41 +426,34 @@ export default function App() {
     if (!cleanWord) {
       return;
     }
-    const existingWord = previewRows.find(row => row.word === cleanWord);
-    if (existingWord) {
-      setStatusText(`Related word already in batch: ${cleanWord}`);
+    if (addedBatchWords.has(cleanWord)) {
+      setStatusText(`Already added to batch: ${cleanWord}`);
       return;
     }
-    setStatusText(`Requesting card for: ${cleanWord}`);
-    const formData = toFormData(formState, false);
-    formData.set('words', cleanWord);
-    fetch('/api/start', {method: 'POST', body: formData})
+    setStatusText(`Adding to review batch: ${cleanWord}`);
+    const candidateLimit = parseInt(formState.candidate_limit) || 1;
+    const includePitch = formState.include_pitch_accent;
+    const pitchTheme = formState.pitch_accent_theme;
+    const params = new URLSearchParams({
+      word: cleanWord,
+      candidate_limit: candidateLimit,
+      include_pitch_accent: includePitch ? 'true' : 'false',
+      pitch_accent_theme: pitchTheme
+    });
+    fetch(`/api/search-candidates?${params}`)
       .then(r => r.json())
       .then(data => {
-        const tempJobId = data.job_id;
-        const pollInterval = setInterval(() => {
-          fetch(`/api/status/${tempJobId}`)
-            .then(r => r.json())
-            .then(job => {
-              if (job.status === 'done') {
-                clearInterval(pollInterval);
-                if (job.preview && job.preview.length > 0) {
-                  setPreviewRows(prev => [...prev, ...job.preview]);
-                  setStatusText(`✓ Added to preview: ${cleanWord}`);
-                }
-              } else if (job.status === 'error') {
-                clearInterval(pollInterval);
-                setStatusText(`Error requesting ${cleanWord}: ${job.error}`);
-              }
-            })
-            .catch(err => {
-              clearInterval(pollInterval);
-              setStatusText(`Failed to request ${cleanWord}`);
-            });
-        }, 500);
+        if (data.review_item) {
+          setReviewItems(prev => [...prev, data.review_item]);
+          setReviewChoices(prev => [...prev, 0]);
+          setAddedBatchWords(prev => new Set([...prev, cleanWord]));
+          setStatusText(`✓ Added to review: ${cleanWord}`);
+        } else {
+          setStatusText(`No Jisho entry found for: ${cleanWord}`);
+        }
       })
       .catch(err => {
-        setStatusText(`Failed to request ${cleanWord}`);
+        setStatusText(`Error adding ${cleanWord} to batch`);
       });
   }
 
