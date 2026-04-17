@@ -2,6 +2,7 @@ import {useEffect, useMemo, useState} from 'react';
 
 const TEXT_FIELDS = [
   'words',
+  'inbox_item_ids',
   'output_path',
   'preset',
   'env_file',
@@ -107,6 +108,8 @@ export default function App() {
   const [ankiModels, setAnkiModels] = useState([]);
   const [ankiDecks, setAnkiDecks] = useState([]);
   const [loadingAnkiOptions, setLoadingAnkiOptions] = useState(false);
+  const [inboxItems, setInboxItems] = useState([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
 
   function stripHtmlText(value) {
     if (!value) {
@@ -149,6 +152,7 @@ export default function App() {
           const defaults = payload.defaults || {};
           const state = buildInitialState(defaults);
           state.words = '';
+          state.inbox_item_ids = '';
           state.review_before_anki = true;
           setFormState(state);
           setPresets(payload.presets || []);
@@ -218,6 +222,10 @@ export default function App() {
           setAddedBatchWords(new Set());
           setAddingBatchWords(new Set());
           setConfirmationJobId(data.requires_confirmation ? jobId : '');
+          if (!data.requires_confirmation) {
+            setFormState((prev) => ({...prev, inbox_item_ids: ''}));
+            fetchInboxPending();
+          }
           setStatusText('Generation complete.');
           setJobId('');
         }
@@ -275,6 +283,7 @@ export default function App() {
       const payload = await resp.json();
       const merged = buildInitialState(payload.settings || {});
       merged.words = formState.words;
+      merged.inbox_item_ids = formState.inbox_item_ids;
       merged.preset = payload.preset || '';
       merged.env_file = payload.env_file || '';
       setFormState(merged);
@@ -319,6 +328,62 @@ export default function App() {
     }
   }
 
+  async function fetchInboxPending() {
+    setLoadingInbox(true);
+    try {
+      const resp = await fetch('/api/inbox/pending');
+      const payload = await resp.json();
+      if (!resp.ok) {
+        throw new Error(payload.error || 'failed to fetch inbox');
+      }
+      setInboxItems(Array.isArray(payload.items) ? payload.items : []);
+    } catch (error) {
+      setStatusText(`Could not load LINE inbox: ${error}`);
+      setInboxItems([]);
+    } finally {
+      setLoadingInbox(false);
+    }
+  }
+
+  function importPendingInboxToWords() {
+    if (!Array.isArray(inboxItems) || inboxItems.length === 0) {
+      setStatusText('LINE inbox empty.');
+      return;
+    }
+
+    setFormState((prev) => {
+      const currentWords = String(prev.words || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const existingSet = new Set(currentWords);
+
+      const incomingWords = inboxItems
+        .map((item) => String(item.text || '').trim())
+        .filter(Boolean);
+      const uniqueIncoming = incomingWords.filter((word) => !existingSet.has(word));
+      const mergedWords = [...currentWords, ...uniqueIncoming];
+
+      const existingIds = String(prev.inbox_item_ids || '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => Number.parseInt(part, 10))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      const incomingIds = inboxItems
+        .map((item) => Number.parseInt(String(item.id), 10))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      const mergedIds = Array.from(new Set([...existingIds, ...incomingIds]));
+
+      setStatusText(`Imported ${uniqueIncoming.length} new word(s) from LINE inbox.`);
+      return {
+        ...prev,
+        words: mergedWords.join('\n'),
+        inbox_item_ids: mergedIds.join(','),
+      };
+    });
+  }
+
   async function confirmAddToAnki() {
     if (!confirmationJobId) {
       return;
@@ -343,6 +408,8 @@ export default function App() {
       setReviewIndex(0);
       setAddedBatchWords(new Set());
       setAddingBatchWords(new Set());
+      setFormState((prev) => ({...prev, inbox_item_ids: ''}));
+      fetchInboxPending();
       setStatusText('Reviewed notes were added to Anki.');
     } catch (error) {
       setStatusText(`Could not confirm add: ${error}`);
@@ -380,6 +447,10 @@ export default function App() {
     }
     fetchAnkiOptions();
   }, [formState.anki_connect, formState.anki_url, showAnkiUrl]);
+
+  useEffect(() => {
+    fetchInboxPending();
+  }, []);
 
   function updateReviewChoice(rowIndex, selectedIndex) {
     setReviewChoices((prev) => {
@@ -728,6 +799,34 @@ export default function App() {
                     <input type="checkbox" checked={formState.include_header} onChange={(e) => updateField('include_header', e.target.checked)} />
                     Include header row in TSV
                   </label>
+
+                  <div className="inbox-block">
+                    <div className="inbox-head">
+                      <strong>LINE Inbox</strong>
+                      <span className="hint">{inboxItems.length} pending</span>
+                    </div>
+                    <div className="inbox-actions">
+                      <button type="button" className="ghost" onClick={fetchInboxPending} disabled={loadingInbox}>
+                        {loadingInbox ? 'Refreshing...' : 'Refresh Inbox'}
+                      </button>
+                      <button type="button" className="ghost" onClick={importPendingInboxToWords} disabled={inboxItems.length === 0}>
+                        Import All Pending
+                      </button>
+                    </div>
+                    {inboxItems.length > 0 ? (
+                      <div className="inbox-list">
+                        {inboxItems.slice(0, 12).map((item) => (
+                          <div key={item.id} className="inbox-item">
+                            <span className="inbox-item-text">{item.text}</span>
+                            <span className="inbox-item-meta">#{item.id}</span>
+                          </div>
+                        ))}
+                        {inboxItems.length > 12 ? <p className="hint">Showing first 12 items.</p> : null}
+                      </div>
+                    ) : (
+                      <p className="hint">No pending LINE items.</p>
+                    )}
+                  </div>
                 </section>
 
                 <section className="card">

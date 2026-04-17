@@ -242,8 +242,61 @@ The web page can:
 - optionally push notes directly to Anki through AnkiConnect
 - auto-create and use a dedicated Jisho2Anki vocab note type by default
 - keep pitch accent generation on by default
-- show live generation progress (status, completed count, logs)
 - load preset defaults into the visible form with a single click
+- import pending LINE inbox messages directly into the words list
+
+## LINE Inbox (Android-Friendly Capture)
+
+You can send vocab to a LINE bot during the day, then import pending items into the web app later.
+
+### How it works
+
+1. Phone sends text to LINE bot.
+2. Bot webhook stores text in local inbox (`pending` state).
+3. In web app, use `Input & Output -> LINE Inbox -> Import All Pending`.
+4. Generate/review/add as usual.
+5. After successful add-to-Anki, imported inbox items are marked `ankied`.
+
+### Required environment setup
+
+Set these env vars for the web service:
+
+- `ANKI_JISHO2ANKI_LINE_CHANNEL_SECRET` (recommended): LINE channel secret for webhook signature validation.
+
+If `LINE_CHANNEL_SECRET` is blank, webhook still works but signature validation is skipped.
+
+### LINE developer console setup
+
+1. Create LINE Messaging API channel.
+2. Set webhook URL to:
+  - `https://YOUR_HOST/api/line/webhook`
+3. Enable webhook delivery.
+4. Add bot as friend on Android.
+5. Send words/expressions as plain text messages (one per line also supported).
+
+Useful app endpoints:
+
+- `GET /api/inbox/pending`
+- `POST /api/inbox/mark-ankied`
+- `POST /api/line/webhook`
+- `POST /api/inbox/add` (manual/testing)
+
+## Hosting Notes (GitHub Pages vs Backend)
+
+GitHub Pages is static-only. It cannot run Flask APIs/webhooks/Anki integration.
+
+So architecture should be:
+
+- Frontend static on GitHub Pages (optional), **and**
+- Backend Flask app hosted on a server (Fly.io/Render/Railway/VPS/home server).
+
+For LINE webhook, backend must be publicly reachable over HTTPS.
+
+If you do not have server now, fastest option:
+
+1. Run app locally.
+2. Expose temporary HTTPS tunnel (for example: Cloudflare Tunnel or ngrok).
+3. Use tunnel URL as LINE webhook URL.
 
 ## Quick Start (CLI)
 

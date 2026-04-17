@@ -7,6 +7,9 @@ import re
 import threading
 import uuid
 import copy
+import base64
+import hashlib
+import hmac
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -22,10 +25,18 @@ from .jisho_client import JishoClient
 from .models import CardRow, SearchCandidate, SentenceCardRow
 from .pipeline import build_rows
 from .pitch_accent import enrich_html_with_pitch
+from .line_inbox import (
+    add_inbox_items,
+    ensure_inbox_db,
+    list_pending_inbox_items,
+    mark_inbox_items_ankied,
+    pending_inbox_count,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
 PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]")
+ensure_inbox_db()
 
 
 def _runtime_env(name: str, default: str) -> str:
@@ -49,6 +60,24 @@ DEFAULT_FLASK_PORT = int(_runtime_env("FLASK_PORT", os.environ.get("PORT", "5000
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOB_LOCK = threading.Lock()
+LINE_CHANNEL_SECRET = _runtime_env("LINE_CHANNEL_SECRET", "")
+
+
+def _parse_inbox_item_ids(raw: str | None) -> list[int]:
+    if raw is None:
+        return []
+    ids: list[int] = []
+    for piece in str(raw).split(","):
+        token = piece.strip()
+        if not token:
+            continue
+        try:
+            value = int(token)
+        except ValueError:
+            continue
+        if value > 0:
+            ids.append(value)
+    return sorted(set(ids))
 
 
 def _static_stylesheet_filename() -> str:
@@ -418,6 +447,8 @@ def _build_from_form(
         default=bool(settings["review_before_anki"]),
     )
 
+    inbox_item_ids = _parse_inbox_item_ids(form_data.get("inbox_item_ids"))
+
     if _bool_from_form(
         form_data.get("anki_connect"), default=bool(settings["anki_connect"])
     ):
@@ -508,6 +539,7 @@ def _build_from_form(
                     "sentence_model_name": sentence_model_name,
                     "sentence_front_field": sentence_front_field,
                     "sentence_back_field": sentence_back_field,
+                    "inbox_item_ids": inbox_item_ids,
                 },
             }
 
@@ -540,6 +572,9 @@ def _build_from_form(
             anki_summary += f", ✓ added {sent_success} sentence card{'' if sent_success == 1 else 's'}"
             if sent_failed:
                 anki_summary += f" ({sent_failed} failed)"
+
+        if success > 0 and inbox_item_ids:
+            mark_inbox_items_ankied(inbox_item_ids)
 
     return {
         "rows": rows,
@@ -692,6 +727,116 @@ def healthz() -> Any:
     return jsonify({"status": "ok"})
 
 
+@app.get("/api/inbox/pending")
+def api_inbox_pending() -> Any:
+    """Return pending LINE inbox rows for import/review in web UI."""
+    limit_raw = request.args.get("limit", "200")
+    try:
+        limit = int(limit_raw)
+    except ValueError:
+        limit = 200
+
+    items = list_pending_inbox_items(limit=limit)
+    return jsonify({"items": items, "count": pending_inbox_count()})
+
+
+@app.post("/api/inbox/add")
+def api_inbox_add() -> Any:
+    """Manually add one or more inbox rows (useful for non-LINE capture/testing)."""
+    body = request.get_json(silent=True) or {}
+    raw_text = str(body.get("text", ""))
+    source = str(body.get("source", "manual"))
+    if not raw_text.strip():
+        return jsonify({"error": "text is required"}), 400
+
+    parts = [segment.strip() for segment in raw_text.splitlines() if segment.strip()]
+    inserted = add_inbox_items(parts, source=source)
+    return jsonify({"inserted": inserted, "count": len(inserted)})
+
+
+@app.post("/api/inbox/mark-ankied")
+def api_inbox_mark_ankied() -> Any:
+    """Mark inbox rows as ankied after successful Anki submission."""
+    body = request.get_json(silent=True) or {}
+    ids_raw = body.get("ids", []) if isinstance(body, dict) else []
+    if not isinstance(ids_raw, list):
+        return jsonify({"error": "ids must be a list"}), 400
+
+    try:
+        ids = [int(item) for item in ids_raw]
+    except (TypeError, ValueError):
+        return jsonify({"error": "ids must be integers"}), 400
+
+    changed = mark_inbox_items_ankied(ids)
+    return jsonify({"changed": changed, "count": pending_inbox_count()})
+
+
+@app.post("/api/line/webhook")
+def api_line_webhook() -> Any:
+    """Receive LINE webhook events and persist text messages into inbox."""
+    raw_body = request.get_data(cache=True)
+    signature = request.headers.get("X-Line-Signature", "")
+
+    if LINE_CHANNEL_SECRET:
+        digest = hmac.new(
+            LINE_CHANNEL_SECRET.encode("utf-8"),
+            raw_body,
+            hashlib.sha256,
+        ).digest()
+        expected = base64.b64encode(digest).decode("utf-8")
+        if not hmac.compare_digest(signature, expected):
+            return jsonify({"error": "invalid signature"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    events = payload.get("events", []) if isinstance(payload, dict) else []
+    if not isinstance(events, list):
+        return jsonify({"inserted": 0, "events": 0})
+
+    inserted_count = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") != "message":
+            continue
+        message = event.get("message", {})
+        if not isinstance(message, dict) or message.get("type") != "text":
+            continue
+
+        text = str(message.get("text", "")).strip()
+        if not text:
+            continue
+
+        source_info = (
+            event.get("source", {}) if isinstance(event.get("source"), dict) else {}
+        )
+        source_type = str(source_info.get("type", "line"))
+        source_id = str(
+            source_info.get("userId")
+            or source_info.get("groupId")
+            or source_info.get("roomId")
+            or ""
+        )
+        source_label = (
+            f"line:{source_type}:{source_id}" if source_id else f"line:{source_type}"
+        )
+
+        received_at_ms = None
+        try:
+            received_at_ms = int(event.get("timestamp"))
+        except (TypeError, ValueError):
+            received_at_ms = None
+
+        pieces = [segment.strip() for segment in text.splitlines() if segment.strip()]
+        inserted = add_inbox_items(
+            pieces,
+            source=source_label,
+            received_at_ms=received_at_ms,
+        )
+        inserted_count += len(inserted)
+
+    return jsonify({"inserted": inserted_count, "events": len(events)})
+
+
 @app.post("/api/start")
 def api_start() -> Any:
     """Start an async generation job and return its job ID.
@@ -833,6 +978,10 @@ def api_confirm(job_id: str) -> Any:
                 f" | Sentence cards: success={sent_success}, failed={sent_failed}, "
                 f"deck={pending_add.get('sentence_deck_name', '')}"
             )
+
+        inbox_ids = pending_add.get("inbox_item_ids", [])
+        if success > 0 and isinstance(inbox_ids, list):
+            mark_inbox_items_ankied([int(item) for item in inbox_ids])
 
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
@@ -1033,4 +1182,5 @@ def generate() -> str:
 
 
 if __name__ == "__main__":
+    ensure_inbox_db()
     app.run(host=DEFAULT_FLASK_HOST, port=DEFAULT_FLASK_PORT, debug=False)
