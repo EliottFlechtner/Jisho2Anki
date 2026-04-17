@@ -1,5 +1,9 @@
 import {useEffect, useMemo, useState} from 'react';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_INBOX_TABLE = import.meta.env.VITE_SUPABASE_INBOX_TABLE || 'inbox_items';
+
 const TEXT_FIELDS = [
   'words',
   'inbox_item_ids',
@@ -86,6 +90,7 @@ function toFormData(formState, showOutputPath) {
 }
 
 export default function App() {
+  const captureMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('capture') === '1';
   const [bootLoaded, setBootLoaded] = useState(false);
   const [presets, setPresets] = useState([]);
   const [formState, setFormState] = useState(() => buildInitialState({}));
@@ -110,6 +115,10 @@ export default function App() {
   const [loadingAnkiOptions, setLoadingAnkiOptions] = useState(false);
   const [inboxItems, setInboxItems] = useState([]);
   const [loadingInbox, setLoadingInbox] = useState(false);
+  const [captureText, setCaptureText] = useState('');
+  const [captureSource, setCaptureSource] = useState('phone');
+  const [captureStatus, setCaptureStatus] = useState('');
+  const [captureSubmitting, setCaptureSubmitting] = useState(false);
 
   function stripHtmlText(value) {
     if (!value) {
@@ -139,6 +148,60 @@ export default function App() {
         ],
       };
     });
+  }
+
+  async function submitCaptureToSupabase(event) {
+    event.preventDefault();
+    const lines = String(captureText || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      setCaptureStatus('Enter at least one word.');
+      return;
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      setCaptureStatus('Supabase config missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild.');
+      return;
+    }
+
+    setCaptureSubmitting(true);
+    setCaptureStatus('Saving to inbox...');
+
+    try {
+      const payload = lines.map((text) => ({
+        text,
+        source: captureSource || 'phone',
+        received_at_ms: Date.now(),
+        created_at_ms: Date.now(),
+        status: 'pending',
+      }));
+
+      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${SUPABASE_INBOX_TABLE}`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(body.message || body.error || `HTTP ${resp.status}`);
+      }
+
+      setCaptureStatus(`Saved ${Array.isArray(body) ? body.length : lines.length} item(s).`);
+      setCaptureText('');
+    } catch (error) {
+      setCaptureStatus(`Save failed: ${error}`);
+    } finally {
+      setCaptureSubmitting(false);
+    }
   }
 
   useEffect(() => {
@@ -338,7 +401,7 @@ export default function App() {
       }
       setInboxItems(Array.isArray(payload.items) ? payload.items : []);
     } catch (error) {
-      setStatusText(`Could not load LINE inbox: ${error}`);
+      setStatusText(`Could not load inbox: ${error}`);
       setInboxItems([]);
     } finally {
       setLoadingInbox(false);
@@ -347,7 +410,7 @@ export default function App() {
 
   function importPendingInboxToWords() {
     if (!Array.isArray(inboxItems) || inboxItems.length === 0) {
-      setStatusText('LINE inbox empty.');
+      setStatusText('Inbox empty.');
       return;
     }
 
@@ -375,7 +438,7 @@ export default function App() {
         .filter((value) => Number.isInteger(value) && value > 0);
       const mergedIds = Array.from(new Set([...existingIds, ...incomingIds]));
 
-      setStatusText(`Imported ${uniqueIncoming.length} new word(s) from LINE inbox.`);
+      setStatusText(`Imported ${uniqueIncoming.length} new word(s) from inbox.`);
       return {
         ...prev,
         words: mergedWords.join('\n'),
@@ -565,6 +628,54 @@ export default function App() {
 
   function sanitizeLogLine(line) {
     return line.replace(/<!-- accent_start -->[\s\S]*?<!-- accent_end -->/g, '[pitch SVG omitted]');
+  }
+
+  if (captureMode) {
+    return (
+      <div className="shell">
+        <main className="panel capture-panel">
+          <header className="hero">
+            <p className="eyebrow">Inbox Capture</p>
+            <h1>Save vocab from phone</h1>
+            <p className="sub">Send words now. Sync on PC later. No same-network requirement.</p>
+          </header>
+
+          <section className="card capture-card">
+            <form className="stack" onSubmit={submitCaptureToSupabase}>
+              <label className="full">Words / expressions (one per line)
+                <textarea value={captureText} onChange={(e) => setCaptureText(e.target.value)} placeholder={"団地\n通快\n頑張る"} rows={8} />
+              </label>
+
+              <label>Source tag
+                <input value={captureSource} onChange={(e) => setCaptureSource(e.target.value)} placeholder="phone" />
+              </label>
+
+              <button className="submit" type="submit" disabled={captureSubmitting}>
+                {captureSubmitting ? 'Saving...' : 'Save To Inbox'}
+              </button>
+            </form>
+
+            <div className="capture-hints">
+              <p className="hint">Setup needs Supabase URL + anon key in build env.</p>
+              <p className="hint">Use this page from GitHub Pages or any static host: add <code>?capture=1</code> to URL.</p>
+              <p className="hint">Example capture URL: <code>https://YOUR_SITE/?capture=1</code></p>
+            </div>
+
+            {captureStatus ? <p className="result-line">{captureStatus}</p> : null}
+
+            {!SUPABASE_URL || !SUPABASE_ANON_KEY ? (
+              <details className="advanced-block" open>
+                <summary>Missing Supabase config</summary>
+                <div className="hint-box">
+                  Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before building the static capture site.
+                  Then enable RLS insert policy for pending inbox rows in Supabase.
+                </div>
+              </details>
+            ) : null}
+          </section>
+        </main>
+      </div>
+    );
   }
 
   if (!bootLoaded) {
@@ -802,7 +913,7 @@ export default function App() {
 
                   <div className="inbox-block">
                     <div className="inbox-head">
-                      <strong>LINE Inbox</strong>
+                      <strong>Inbox</strong>
                       <span className="hint">{inboxItems.length} pending</span>
                     </div>
                     <div className="inbox-actions">
@@ -824,7 +935,7 @@ export default function App() {
                         {inboxItems.length > 12 ? <p className="hint">Showing first 12 items.</p> : null}
                       </div>
                     ) : (
-                      <p className="hint">No pending LINE items.</p>
+                      <p className="hint">No pending inbox items.</p>
                     )}
                   </div>
                 </section>

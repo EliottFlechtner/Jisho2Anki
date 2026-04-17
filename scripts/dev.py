@@ -16,7 +16,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = ROOT / "frontend"
-FLASK_ENTRYPOINT = ROOT / "web_app.py"
 
 
 def find_free_port() -> int:
@@ -30,7 +29,7 @@ def find_free_port() -> int:
         return sock.getsockname()[1]
 
 
-def terminate_process(process: subprocess.Popen[str] | None) -> None:
+def terminate_process(process: subprocess.Popen[bytes] | None) -> None:
     """Stop a process gracefully first, then force-kill after timeout.
 
     Args:
@@ -93,7 +92,7 @@ def main() -> int:
         env=frontend_env,
     )
 
-    flask_process: subprocess.Popen[str] | None = None
+    flask_process: subprocess.Popen[bytes] | None = None
     try:
         if frontend_process.poll() is not None:
             return frontend_process.returncode or 1
@@ -110,7 +109,7 @@ def main() -> int:
 
         print(f"Starting Flask on {flask_url}")
         flask_process = subprocess.Popen(
-            [sys.executable, str(FLASK_ENTRYPOINT)],
+            [sys.executable, "-m", "autofiller.web_app"],
             cwd=ROOT,
             env=flask_env,
         )

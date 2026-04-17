@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import unittest
 from unittest.mock import patch
 
@@ -545,7 +541,7 @@ class WebApiEndpointTests(unittest.TestCase):
             {
                 "id": 11,
                 "text": "団地",
-                "source": "line:user:abc",
+                "source": "capture:web",
                 "received_at_ms": 1,
                 "created_at_ms": 1,
                 "status": "pending",
@@ -576,30 +572,12 @@ class WebApiEndpointTests(unittest.TestCase):
         self.assertEqual(mark_resp.get_json()["changed"], 2)
         self.assertEqual(mark_resp.get_json()["count"], 3)
 
-    def test_line_webhook_ingests_text_events(self) -> None:
-        """LINE webhook should accept valid signature and store incoming text lines."""
+    def test_inbox_add_endpoint_inserts_text_lines(self) -> None:
+        """Inbox add endpoint should split multiline text and store each row."""
         app = web_app_module.app
-        body_obj = {
-            "events": [
-                {
-                    "type": "message",
-                    "timestamp": 123456789,
-                    "source": {"type": "user", "userId": "U123"},
-                    "message": {"type": "text", "text": "団地\n通快"},
-                }
-            ]
-        }
-        body_text = json.dumps(body_obj)
-
-        secret = "line-secret-for-test"
-        digest = hmac.new(
-            secret.encode("utf-8"), body_text.encode("utf-8"), hashlib.sha256
-        ).digest()
-        signature = base64.b64encode(digest).decode("utf-8")
 
         with (
             app.test_client() as client,
-            patch("autofiller.web_app.LINE_CHANNEL_SECRET", secret),
             patch(
                 "autofiller.web_app.add_inbox_items",
                 side_effect=lambda items, **_kwargs: [
@@ -608,18 +586,14 @@ class WebApiEndpointTests(unittest.TestCase):
             ),
         ):
             resp = client.post(
-                "/api/line/webhook",
-                data=body_text,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Line-Signature": signature,
-                },
+                "/api/inbox/add",
+                json={"text": "団地\n通快", "source": "capture:web"},
             )
 
         self.assertEqual(resp.status_code, 200)
         payload = resp.get_json()
-        self.assertEqual(payload["events"], 1)
-        self.assertEqual(payload["inserted"], 2)
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(len(payload["inserted"]), 2)
 
     def test_confirm_marks_inbox_items_ankied(self) -> None:
         """Confirm endpoint should mark imported inbox item ids as ankied on success."""
