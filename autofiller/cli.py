@@ -15,6 +15,30 @@ from .io_utils import read_words_from_file, write_tsv
 from .pipeline import build_rows
 
 
+def _confirm_add_to_anki(rows: list, *, preview_limit: int = 20) -> bool:
+    """Prompt for final confirmation before sending generated rows to Anki.
+
+    Args:
+        rows: Generated card rows queued for submission.
+        preview_limit: Maximum number of rows printed in preview.
+
+    Returns:
+        True when user confirms add, else False.
+    """
+    print("\nReview before adding to Anki:")
+    print(f"  Total rows: {len(rows)}")
+    shown = min(len(rows), preview_limit)
+    for index, row in enumerate(rows[:shown], start=1):
+        print(
+            f"  {index}. word='{row.word}' reading='{row.reading}' meaning='{row.meaning}'"
+        )
+    if shown < len(rows):
+        print(f"  ... and {len(rows) - shown} more rows")
+
+    answer = input("Proceed adding these rows to Anki? [y/N]: ").strip().lower()
+    return answer in {"y", "yes"}
+
+
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments, merging defaults from preset/env-file settings.
 
@@ -110,10 +134,32 @@ def parse_args() -> argparse.Namespace:
         "--no-pitch-accent", dest="include_pitch_accent", action="store_false"
     )
     parser.set_defaults(include_pitch_accent=bool(defaults["include_pitch_accent"]))
+    parser.add_argument(
+        "--pitch-theme",
+        choices=["dark", "light"],
+        default=defaults["pitch_accent_theme"],
+        help="Pitch accent SVG theme (dark for dark backgrounds, light for white backgrounds).",
+    )
+    parser.add_argument("--furigana", dest="include_furigana", action="store_true")
+    parser.add_argument("--no-furigana", dest="include_furigana", action="store_false")
+    parser.set_defaults(include_furigana=bool(defaults["include_furigana"]))
+    parser.add_argument(
+        "--furigana-format",
+        choices=["ruby", "anki"],
+        default=defaults["furigana_format"],
+        help="Furigana output format for word field.",
+    )
 
     parser.add_argument("--anki-connect", dest="anki_connect", action="store_true")
     parser.add_argument("--no-anki-connect", dest="anki_connect", action="store_false")
     parser.set_defaults(anki_connect=bool(defaults["anki_connect"]))
+    parser.add_argument(
+        "--review-before-anki", dest="review_before_anki", action="store_true"
+    )
+    parser.add_argument(
+        "--no-review-before-anki", dest="review_before_anki", action="store_false"
+    )
+    parser.set_defaults(review_before_anki=bool(defaults["review_before_anki"]))
     parser.add_argument(
         "--anki-url",
         default=defaults["anki_url"],
@@ -202,6 +248,9 @@ def main() -> None:
         include_sentences=args.include_sentences,
         separate_sentence_cards=args.separate_sentence_cards,
         include_pitch_accent=args.include_pitch_accent,
+        pitch_accent_theme=args.pitch_theme,
+        include_furigana=args.include_furigana,
+        furigana_format=args.furigana_format,
         max_workers=max(1, args.max_workers),
         interactive_review=args.interactive_review,
     )
@@ -212,6 +261,10 @@ def main() -> None:
     if args.anki_connect:
         if not args.deck_name or not args.model_name:
             raise ValueError("--deck-name and --model-name must not be blank.")
+
+        if args.review_before_anki and not _confirm_add_to_anki(rows):
+            print("Skipped AnkiConnect add after review.")
+            return
 
         tags = [tag.strip() for tag in args.tags.split(",") if tag.strip()]
         success, failed = add_rows_to_anki(

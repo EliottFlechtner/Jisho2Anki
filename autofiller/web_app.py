@@ -6,18 +6,22 @@ import os
 import re
 import threading
 import uuid
+import copy
 from pathlib import Path
 from typing import Any, Mapping
 
 from flask import Flask, jsonify, render_template, request
 
-from .anki_connect_client import add_rows_to_anki, add_sentence_rows_to_anki
+from .anki_connect_client import add_rows_to_anki, add_sentence_rows_to_anki, invoke
 from .config import (
     available_presets,
     load_settings,
 )
 from .io_utils import normalize_words, write_tsv
+from .jisho_client import JishoClient
+from .models import CardRow, SearchCandidate, SentenceCardRow
 from .pipeline import build_rows
+from .pitch_accent import enrich_html_with_pitch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
@@ -109,6 +113,140 @@ def _serialize_rows_preview(rows: list[Any], limit: int = 60) -> list[dict[str, 
         {"word": row.word, "meaning": row.meaning, "reading": row.reading}
         for row in rows[:limit]
     ]
+
+
+def _serialize_sentence_rows_preview(
+    rows: list[Any], limit: int = 60
+) -> list[dict[str, str]]:
+    """Serialize generated sentence rows into a lightweight preview payload.
+
+    Args:
+        rows: Full generated sentence-row list.
+        limit: Maximum number of rows to include in preview.
+
+    Returns:
+        JSON-serializable preview row dictionaries.
+    """
+    return [{"front": row.front, "back": row.back} for row in rows[:limit]]
+
+
+def _deserialize_card_rows(payload_rows: list[dict[str, str]]) -> list[CardRow]:
+    """Rebuild `CardRow` objects from serialized payload dictionaries."""
+    return [
+        CardRow(
+            word=str(item.get("word", "")),
+            meaning=str(item.get("meaning", "")),
+            reading=str(item.get("reading", "")),
+        )
+        for item in payload_rows
+    ]
+
+
+def _deserialize_sentence_rows(
+    payload_rows: list[dict[str, str]],
+) -> list[SentenceCardRow]:
+    """Rebuild `SentenceCardRow` objects from serialized payload dictionaries."""
+    return [
+        SentenceCardRow(
+            front=str(item.get("front", "")),
+            back=str(item.get("back", "")),
+        )
+        for item in payload_rows
+    ]
+
+
+def _to_hiragana(text: str) -> str:
+    """Convert Katakana in `text` to Hiragana, preserving other characters."""
+    chars: list[str] = []
+    for char in text:
+        code = ord(char)
+        if 0x30A1 <= code <= 0x30F6:
+            chars.append(chr(code - 0x60))
+        else:
+            chars.append(char)
+    return "".join(chars)
+
+
+def _build_review_items(
+    *,
+    words: list[str],
+    candidate_limit: int,
+    include_pitch_accent: bool,
+    pitch_accent_theme: str,
+    generated_rows: list[CardRow],
+) -> list[dict[str, Any]]:
+    """Build per-word candidate options used by web review-before-add workflow."""
+    client = JishoClient()
+    review_items: list[dict[str, Any]] = []
+
+    for index, word in enumerate(words):
+        candidates, related_candidates = client.search_review(
+            word,
+            candidate_limit=max(candidate_limit, 1),
+        )
+        if not candidates:
+            candidates = [SearchCandidate(meaning="", reading="")]
+
+        options: list[dict[str, str]] = []
+        for candidate in candidates:
+            reading = _to_hiragana(candidate.reading)
+            reading_preview = reading
+            if include_pitch_accent:
+                pitch_html = enrich_html_with_pitch(
+                    word,
+                    reading,
+                    theme=pitch_accent_theme,
+                )
+                if pitch_html:
+                    reading_preview = pitch_html
+
+            options.append(
+                {
+                    "meaning": candidate.meaning,
+                    "reading": reading,
+                    "reading_preview": reading_preview,
+                }
+            )
+
+        selected_index = 0
+        if index < len(generated_rows):
+            generated_meaning = generated_rows[index].meaning
+            for opt_index, option in enumerate(options):
+                if option["meaning"] == generated_meaning:
+                    selected_index = opt_index
+                    break
+
+        review_items.append(
+            {
+                "word": (
+                    generated_rows[index].word if index < len(generated_rows) else word
+                ),
+                "source_word": word,
+                "options": options,
+                "related_words": [
+                    {
+                        "word": str(item.get("word", "")),
+                        "meaning": str(item.get("meaning", "")),
+                        "reading": _to_hiragana(str(item.get("reading", ""))),
+                        "reading_preview": (
+                            enrich_html_with_pitch(
+                                str(item.get("word", "")),
+                                _to_hiragana(str(item.get("reading", ""))),
+                                theme=pitch_accent_theme,
+                            )
+                            if include_pitch_accent
+                            else _to_hiragana(str(item.get("reading", "")))
+                        )
+                        or _to_hiragana(str(item.get("reading", ""))),
+                    }
+                    for item in related_candidates
+                    if str(item.get("word", "")).strip()
+                ],
+                "selected_index": selected_index,
+            }
+        )
+
+    return review_items
 
 
 def _value_from_form(form_data: Mapping[str, str], key: str, default: str) -> str:
@@ -221,6 +359,26 @@ def _build_from_form(
         form_data.get("include_pitch_accent"),
         default=bool(settings["include_pitch_accent"]),
     )
+    pitch_accent_theme = _value_from_form(
+        form_data,
+        "pitch_accent_theme",
+        str(settings["pitch_accent_theme"]),
+    ).lower()
+    if pitch_accent_theme not in {"dark", "light"}:
+        pitch_accent_theme = "dark"
+
+    include_furigana = _bool_from_form(
+        form_data.get("include_furigana"),
+        default=bool(settings["include_furigana"]),
+    )
+    furigana_format = _value_from_form(
+        form_data,
+        "furigana_format",
+        str(settings["furigana_format"]),
+    ).lower()
+    if furigana_format not in {"ruby", "anki"}:
+        furigana_format = "ruby"
+
     separate_sentence_cards = _bool_from_form(
         form_data.get("separate_sentence_cards"),
         default=bool(settings["separate_sentence_cards"]),
@@ -234,6 +392,9 @@ def _build_from_form(
         include_sentences=include_sentences,
         separate_sentence_cards=separate_sentence_cards,
         include_pitch_accent=include_pitch_accent,
+        pitch_accent_theme=pitch_accent_theme,
+        include_furigana=include_furigana,
+        furigana_format=furigana_format,
         max_workers=max(1, max_workers),
         interactive_review=False,
         progress_printer=progress_printer,
@@ -252,6 +413,11 @@ def _build_from_form(
     write_tsv(rows=rows, output_path=output_path, include_header=include_header)
 
     anki_summary = ""
+    review_before_anki = _bool_from_form(
+        form_data.get("review_before_anki"),
+        default=bool(settings["review_before_anki"]),
+    )
+
     if _bool_from_form(
         form_data.get("anki_connect"), default=bool(settings["anki_connect"])
     ):
@@ -300,6 +466,51 @@ def _build_from_form(
             str(settings["sentence_back_field"]),
         )
 
+        if review_before_anki:
+            review_items = _build_review_items(
+                words=words,
+                candidate_limit=candidate_limit,
+                include_pitch_accent=include_pitch_accent,
+                pitch_accent_theme=pitch_accent_theme,
+                generated_rows=rows,
+            )
+            anki_summary = "Review mode enabled: preview generated. Confirm to add these notes to Anki."
+            return {
+                "rows": rows,
+                "sentence_rows": sentence_rows,
+                "output_path": str(output_path),
+                "message": f"Generated {len(rows)} rows.",
+                "anki_summary": anki_summary,
+                "preset": preset_name,
+                "env_file": env_file,
+                "requires_confirmation": True,
+                "review_items": review_items,
+                "pending_add": {
+                    "rows": _serialize_rows_preview(rows, limit=len(rows)),
+                    "sentence_rows": _serialize_sentence_rows_preview(
+                        sentence_rows, limit=len(sentence_rows)
+                    ),
+                    "review_items": copy.deepcopy(review_items),
+                    "source_words": words,
+                    "candidate_limit": candidate_limit,
+                    "include_pitch_accent": include_pitch_accent,
+                    "pitch_accent_theme": pitch_accent_theme,
+                    "separate_sentence_cards": separate_sentence_cards,
+                    "anki_url": anki_url,
+                    "deck_name": deck_name,
+                    "model_name": model_name,
+                    "field_word": field_word,
+                    "field_meaning": field_meaning,
+                    "field_reading": field_reading,
+                    "tags": tags,
+                    "allow_duplicates": allow_duplicates,
+                    "sentence_deck_name": sentence_deck_name,
+                    "sentence_model_name": sentence_model_name,
+                    "sentence_front_field": sentence_front_field,
+                    "sentence_back_field": sentence_back_field,
+                },
+            }
+
         success, failed = add_rows_to_anki(
             rows,
             url=anki_url,
@@ -311,9 +522,9 @@ def _build_from_form(
             tags=tags,
             allow_duplicates=allow_duplicates,
         )
-        anki_summary = (
-            f"Added to Anki: success={success}, failed={failed}, endpoint={anki_url}"
-        )
+        anki_summary = f"✓ Added {success} card{'' if success == 1 else 's'} to Anki"
+        if failed:
+            anki_summary += f" ({failed} failed)"
 
         if separate_sentence_cards:
             sent_success, sent_failed = add_sentence_rows_to_anki(
@@ -326,18 +537,20 @@ def _build_from_form(
                 tags=tags,
                 allow_duplicates=allow_duplicates,
             )
-            anki_summary += (
-                f" | Sentence cards: success={sent_success}, failed={sent_failed}, "
-                f"deck={sentence_deck_name}"
-            )
+            anki_summary += f", ✓ added {sent_success} sentence card{'' if sent_success == 1 else 's'}"
+            if sent_failed:
+                anki_summary += f" ({sent_failed} failed)"
 
     return {
         "rows": rows,
+        "sentence_rows": sentence_rows,
         "output_path": str(output_path),
         "message": f"Generated {len(rows)} rows.",
         "anki_summary": anki_summary,
         "preset": preset_name,
         "env_file": env_file,
+        "requires_confirmation": False,
+        "review_items": [],
     }
 
 
@@ -360,6 +573,33 @@ def api_settings_preview() -> Any:
             "presets": available_presets(),
         }
     )
+
+
+@app.get("/api/anki-options")
+def api_anki_options() -> Any:
+    """Return available Anki model and deck names for dropdown selection.
+
+    Query params:
+        anki_url: Optional AnkiConnect endpoint URL.
+
+    Returns:
+        JSON payload with `models` and `decks` arrays, or a descriptive error.
+    """
+    anki_url = request.args.get("anki_url", "").strip() or str(
+        load_settings()["anki_url"]
+    )
+
+    try:
+        models = invoke(anki_url, "modelNames", {})
+        decks = invoke(anki_url, "deckNames", {})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc), "models": [], "decks": []}), 502
+
+    safe_models = (
+        sorted(str(name) for name in models) if isinstance(models, list) else []
+    )
+    safe_decks = sorted(str(name) for name in decks) if isinstance(decks, list) else []
+    return jsonify({"models": safe_models, "decks": safe_decks})
 
 
 def _run_job(job_id: str, form_data: dict[str, str]) -> None:
@@ -412,8 +652,14 @@ def _run_job(job_id: str, form_data: dict[str, str]) -> None:
             anki_summary=result["anki_summary"],
             output_path=result["output_path"],
             preview=_serialize_rows_preview(result["rows"]),
+            sentence_preview=_serialize_sentence_rows_preview(
+                result.get("sentence_rows", [])
+            ),
+            review_items=result.get("review_items", []),
             preset=form_data.get("preset", ""),
             env_file=form_data.get("env_file", ""),
+            requires_confirmation=bool(result.get("requires_confirmation", False)),
+            pending_add=result.get("pending_add"),
         )
     except Exception as exc:  # noqa: BLE001
         _job_update(job_id, status="error", error=str(exc))
@@ -474,7 +720,299 @@ def api_status(job_id: str) -> Any:
         job = JOBS.get(job_id)
     if not job:
         return jsonify({"error": "job not found"}), 404
-    return jsonify(job)
+    payload = dict(job)
+    payload.pop("pending_add", None)
+    return jsonify(payload)
+
+
+@app.post("/api/confirm/<job_id>")
+def api_confirm(job_id: str) -> Any:
+    """Confirm and execute pending Anki add for a previously reviewed job.
+
+    Args:
+        job_id: Target job identifier.
+
+    Returns:
+        JSON response with the resulting Anki summary or an error payload.
+    """
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "job not found"}), 404
+
+        if not job.get("requires_confirmation"):
+            return jsonify({"error": "job does not require confirmation"}), 400
+
+        pending_add = job.get("pending_add")
+        if not isinstance(pending_add, dict):
+            return jsonify({"error": "no pending add payload"}), 400
+
+    request_body = request.get_json(silent=True) or {}
+    requested_choices = (
+        request_body.get("choices") if isinstance(request_body, dict) else None
+    )
+
+    try:
+        rows = _deserialize_card_rows(pending_add.get("rows", []))
+        sentence_rows = _deserialize_sentence_rows(pending_add.get("sentence_rows", []))
+        review_items = pending_add.get("review_items", [])
+
+        if isinstance(requested_choices, list) and isinstance(review_items, list):
+            adjusted_rows: list[CardRow] = []
+            for index, row in enumerate(rows):
+                choice_value = (
+                    requested_choices[index] if index < len(requested_choices) else 0
+                )
+                try:
+                    selected_index = int(choice_value)
+                except (TypeError, ValueError):
+                    selected_index = 0
+
+                item = review_items[index] if index < len(review_items) else {}
+                options = item.get("options", []) if isinstance(item, dict) else []
+                if not isinstance(options, list) or not options:
+                    adjusted_rows.append(row)
+                    continue
+
+                if selected_index < 0 or selected_index >= len(options):
+                    selected_index = 0
+                selected_option = options[selected_index]
+                adjusted_rows.append(
+                    CardRow(
+                        word=row.word,
+                        meaning=str(selected_option.get("meaning", row.meaning)),
+                        reading=str(
+                            selected_option.get("reading_preview", row.reading)
+                        ),
+                    )
+                )
+
+                if index < len(sentence_rows):
+                    current_sentence_row = sentence_rows[index]
+                    updated_back = re.sub(
+                        r"Reading:\s*[^<]*",
+                        f"Reading: {str(selected_option.get('reading', ''))}",
+                        current_sentence_row.back,
+                    )
+                    sentence_rows[index] = SentenceCardRow(
+                        front=current_sentence_row.front,
+                        back=updated_back,
+                    )
+
+            rows = adjusted_rows
+
+        success, failed = add_rows_to_anki(
+            rows,
+            url=str(pending_add.get("anki_url", "")),
+            deck_name=str(pending_add.get("deck_name", "")),
+            model_name=str(pending_add.get("model_name", "")),
+            word_field=str(pending_add.get("field_word", "Word")),
+            meaning_field=str(pending_add.get("field_meaning", "Translation")),
+            reading_field=str(pending_add.get("field_reading", "Reading")),
+            tags=list(pending_add.get("tags", [])),
+            allow_duplicates=bool(pending_add.get("allow_duplicates", False)),
+        )
+
+        summary = (
+            "Added to Anki after review: "
+            f"success={success}, failed={failed}, endpoint={pending_add.get('anki_url', '')}"
+        )
+
+        if pending_add.get("separate_sentence_cards"):
+            sent_success, sent_failed = add_sentence_rows_to_anki(
+                sentence_rows,
+                url=str(pending_add.get("anki_url", "")),
+                deck_name=str(pending_add.get("sentence_deck_name", "")),
+                model_name=str(pending_add.get("sentence_model_name", "")),
+                front_field=str(pending_add.get("sentence_front_field", "Front")),
+                back_field=str(pending_add.get("sentence_back_field", "Back")),
+                tags=list(pending_add.get("tags", [])),
+                allow_duplicates=bool(pending_add.get("allow_duplicates", False)),
+            )
+            summary += (
+                f" | Sentence cards: success={sent_success}, failed={sent_failed}, "
+                f"deck={pending_add.get('sentence_deck_name', '')}"
+            )
+
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+    _job_update(
+        job_id,
+        requires_confirmation=False,
+        pending_add=None,
+        anki_summary=summary,
+    )
+    return jsonify({"anki_summary": summary})
+
+
+@app.get("/api/review-items/<job_id>")
+def api_review_items(job_id: str) -> Any:
+    """Rebuild review candidate options for a pending review job.
+
+    Args:
+        job_id: Target job identifier.
+
+    Returns:
+        JSON response containing rebuilt `review_items`.
+    """
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "job not found", "review_items": []}), 404
+
+        if not job.get("requires_confirmation"):
+            return (
+                jsonify(
+                    {
+                        "error": "job does not require confirmation",
+                        "review_items": [],
+                    }
+                ),
+                400,
+            )
+
+        pending_add = job.get("pending_add")
+        if not isinstance(pending_add, dict):
+            return jsonify({"error": "no pending add payload", "review_items": []}), 400
+
+    try:
+        words_raw = pending_add.get("source_words", [])
+        words = [str(word) for word in words_raw] if isinstance(words_raw, list) else []
+        rows = _deserialize_card_rows(pending_add.get("rows", []))
+
+        review_items = _build_review_items(
+            words=words,
+            candidate_limit=int(pending_add.get("candidate_limit", 1)),
+            include_pitch_accent=bool(pending_add.get("include_pitch_accent", False)),
+            pitch_accent_theme=str(pending_add.get("pitch_accent_theme", "dark")),
+            generated_rows=rows,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc), "review_items": []}), 500
+
+    _job_update(job_id, review_items=review_items)
+    return jsonify({"review_items": review_items})
+
+
+@app.post("/api/review-add-word/<job_id>")
+def api_review_add_word(job_id: str) -> Any:
+    """Append one related word to an in-progress review job.
+
+    This updates both in-memory review items and the pending add payload so
+    confirm-to-Anki includes the newly added word.
+    """
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "job not found"}), 404
+
+        if not job.get("requires_confirmation"):
+            return jsonify({"error": "job does not require confirmation"}), 400
+
+        pending_add = job.get("pending_add")
+        if not isinstance(pending_add, dict):
+            return jsonify({"error": "no pending add payload"}), 400
+
+    request_body = request.get_json(silent=True) or {}
+    word = str(request_body.get("word", "")).strip()
+    if not word:
+        return jsonify({"error": "word is required"}), 400
+
+    try:
+        source_words_raw = pending_add.get("source_words", [])
+        source_words = (
+            [str(item).strip() for item in source_words_raw if str(item).strip()]
+            if isinstance(source_words_raw, list)
+            else []
+        )
+        if word in source_words:
+            return jsonify({"error": "word already in batch"}), 409
+
+        review_items = _build_review_items(
+            words=[word],
+            candidate_limit=max(int(pending_add.get("candidate_limit", 1)), 1),
+            include_pitch_accent=bool(pending_add.get("include_pitch_accent", False)),
+            pitch_accent_theme=str(pending_add.get("pitch_accent_theme", "dark")),
+            generated_rows=[],
+        )
+        if not review_items:
+            return jsonify({"error": "no candidates found"}), 404
+
+        review_item = review_items[0]
+        options = (
+            review_item.get("options", []) if isinstance(review_item, dict) else []
+        )
+        selected_index = 0
+        selected_option = options[0] if isinstance(options, list) and options else {}
+
+        rows_payload = pending_add.get("rows", [])
+        if not isinstance(rows_payload, list):
+            rows_payload = []
+        rows_payload.append(
+            {
+                "word": str(review_item.get("word", word)),
+                "meaning": str(selected_option.get("meaning", "")),
+                "reading": str(selected_option.get("reading_preview", "")),
+            }
+        )
+        pending_add["rows"] = rows_payload
+
+        pending_review_items = pending_add.get("review_items", [])
+        if not isinstance(pending_review_items, list):
+            pending_review_items = []
+        updated_review_items = [*pending_review_items, review_item]
+        pending_add["review_items"] = updated_review_items
+
+        source_words.append(word)
+        pending_add["source_words"] = source_words
+
+        current_review_items = updated_review_items
+
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+
+    _job_update(job_id, pending_add=pending_add, review_items=current_review_items)
+    return jsonify({"review_item": review_item, "selected_index": selected_index})
+
+
+@app.get("/api/search-candidates")
+def api_search_candidates() -> Any:
+    """Search Jisho for a single word and return review candidate options.
+
+    Query parameters:
+        word: The word to search for.
+        candidate_limit: Maximum number of candidates (default 1).
+        include_pitch_accent: Whether to include pitch accent SVG (default false).
+        pitch_accent_theme: Theme for pitch accent SVG (default 'dark').
+
+    Returns:
+        JSON response containing a single review item.
+    """
+    word = request.args.get("word", "").strip()
+    if not word:
+        return jsonify({"error": "word parameter required"}), 400
+
+    try:
+        candidate_limit = int(request.args.get("candidate_limit", "1"))
+        include_pitch_accent = _bool_from_form(request.args.get("include_pitch_accent"))
+        pitch_accent_theme = request.args.get("pitch_accent_theme", "dark")
+
+        review_items = _build_review_items(
+            words=[word],
+            candidate_limit=max(candidate_limit, 1),
+            include_pitch_accent=include_pitch_accent,
+            pitch_accent_theme=pitch_accent_theme,
+            generated_rows=[],
+        )
+
+        if review_items:
+            return jsonify({"review_item": review_items[0]})
+        else:
+            return jsonify({"review_item": None}), 404
+
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.post("/generate")

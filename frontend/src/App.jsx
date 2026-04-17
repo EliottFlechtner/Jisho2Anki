@@ -9,6 +9,8 @@ const TEXT_FIELDS = [
   'candidate_limit',
   'sentence_count',
   'max_workers',
+  'pitch_accent_theme',
+  'furigana_format',
   'anki_url',
   'deck_name',
   'model_name',
@@ -27,9 +29,30 @@ const CHECK_FIELDS = [
   'include_sentences',
   'separate_sentence_cards',
   'include_pitch_accent',
+  'include_furigana',
   'anki_connect',
+  'review_before_anki',
   'allow_duplicates',
 ];
+
+function parseBoolish(value, fallback = false) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+      return true;
+    }
+    if (['0', 'false', 'no', 'off'].includes(normalized)) {
+      return false;
+    }
+  }
+  return fallback;
+}
 
 function buildInitialState(defaults) {
   const state = {};
@@ -37,15 +60,19 @@ function buildInitialState(defaults) {
     state[key] = key in defaults ? String(defaults[key] ?? '') : '';
   }
   for (const key of CHECK_FIELDS) {
-    state[key] = Boolean(defaults[key]);
+    const fallback = key === 'review_before_anki';
+    state[key] = parseBoolish(defaults[key], fallback);
   }
   return state;
 }
 
-function toFormData(formState) {
+function toFormData(formState, showOutputPath) {
   const data = new FormData();
 
   for (const key of TEXT_FIELDS) {
+    if (key === 'output_path' && !showOutputPath) {
+      continue;
+    }
     data.append(key, formState[key] ?? '');
   }
 
@@ -64,8 +91,52 @@ export default function App() {
   const [statusText, setStatusText] = useState('Bootstrapping settings...');
   const [progress, setProgress] = useState({status: 'idle', completed: 0, total: 0, log: []});
   const [result, setResult] = useState({message: '', summary: ''});
+  const [previewRows, setPreviewRows] = useState([]);
+  const [previewSentenceRows, setPreviewSentenceRows] = useState([]);
+  const [reviewItems, setReviewItems] = useState([]);
+  const [reviewChoices, setReviewChoices] = useState([]);
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [addedBatchWords, setAddedBatchWords] = useState(new Set());
+  const [addingBatchWords, setAddingBatchWords] = useState(new Set());
+  const [confirmationJobId, setConfirmationJobId] = useState('');
+  const [confirmingAdd, setConfirmingAdd] = useState(false);
   const [jobId, setJobId] = useState('');
   const [loadingPreset, setLoadingPreset] = useState(false);
+  const [showOutputPath, setShowOutputPath] = useState(false);
+  const [showAnkiUrl, setShowAnkiUrl] = useState(false);
+  const [ankiModels, setAnkiModels] = useState([]);
+  const [ankiDecks, setAnkiDecks] = useState([]);
+  const [loadingAnkiOptions, setLoadingAnkiOptions] = useState(false);
+
+  function stripHtmlText(value) {
+    if (!value) {
+      return '';
+    }
+    return String(value).replace(/<[^>]*>/g, '').trim();
+  }
+
+  function buildFallbackReviewItems(rows) {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return [];
+    }
+    return rows.map((row) => {
+      const word = String(row.word || '');
+      const reading = String(row.reading || '');
+      const meaning = String(row.meaning || '');
+      return {
+        word,
+        source_word: stripHtmlText(word),
+        selected_index: 0,
+        options: [
+          {
+            meaning,
+            reading: stripHtmlText(reading),
+            reading_preview: reading,
+          },
+        ],
+      };
+    });
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -78,6 +149,7 @@ export default function App() {
           const defaults = payload.defaults || {};
           const state = buildInitialState(defaults);
           state.words = '';
+          state.review_before_anki = true;
           setFormState(state);
           setPresets(payload.presets || []);
           setStatusText('Base defaults loaded. Select a preset to refill fields.');
@@ -117,13 +189,49 @@ export default function App() {
         });
 
         if (data.status === 'done') {
+          const statusPreviewRows = Array.isArray(data.preview) ? data.preview : [];
+          const statusReviewItems = Array.isArray(data.review_items) ? data.review_items : [];
+          let effectiveReviewItems = statusReviewItems;
+
+          if (data.requires_confirmation && effectiveReviewItems.length === 0) {
+            try {
+              const reviewResp = await fetch(`/api/review-items/${jobId}`);
+              const reviewPayload = await reviewResp.json();
+              if (reviewResp.ok && Array.isArray(reviewPayload.review_items) && reviewPayload.review_items.length > 0) {
+                effectiveReviewItems = reviewPayload.review_items;
+              }
+            } catch (_error) {
+              // Fall through to local fallback below.
+            }
+          }
+
+          if (data.requires_confirmation && effectiveReviewItems.length === 0 && statusPreviewRows.length > 0) {
+            effectiveReviewItems = buildFallbackReviewItems(statusPreviewRows);
+          }
+
           setResult({message: data.message || '', summary: data.anki_summary || ''});
+          setPreviewRows(statusPreviewRows);
+          setPreviewSentenceRows(data.sentence_preview || []);
+          setReviewItems(effectiveReviewItems);
+          setReviewChoices(effectiveReviewItems.map((item) => item.selected_index || 0));
+          setReviewIndex(0);
+          setAddedBatchWords(new Set());
+          setAddingBatchWords(new Set());
+          setConfirmationJobId(data.requires_confirmation ? jobId : '');
           setStatusText('Generation complete.');
           setJobId('');
         }
 
         if (data.status === 'error') {
           setResult({message: `Error: ${data.error || 'unknown error'}`, summary: ''});
+          setPreviewRows([]);
+          setPreviewSentenceRows([]);
+          setReviewItems([]);
+          setReviewChoices([]);
+          setReviewIndex(0);
+          setAddedBatchWords(new Set());
+          setAddingBatchWords(new Set());
+          setConfirmationJobId('');
           setStatusText('Generation failed.');
           setJobId('');
         }
@@ -187,13 +295,21 @@ export default function App() {
     }
 
     setResult({message: '', summary: ''});
+    setPreviewRows([]);
+    setPreviewSentenceRows([]);
+    setReviewItems([]);
+    setReviewChoices([]);
+    setReviewIndex(0);
+    setAddedBatchWords(new Set());
+    setAddingBatchWords(new Set());
+    setConfirmationJobId('');
     setProgress({status: 'starting', completed: 0, total: 0, log: []});
     setStatusText('Starting generation...');
 
     try {
       const resp = await fetch('/api/start', {
         method: 'POST',
-        body: toFormData(formState),
+        body: toFormData(formState, showOutputPath),
       });
       const payload = await resp.json();
       setJobId(payload.job_id || '');
@@ -203,11 +319,190 @@ export default function App() {
     }
   }
 
+  async function confirmAddToAnki() {
+    if (!confirmationJobId) {
+      return;
+    }
+
+    setConfirmingAdd(true);
+    setStatusText('Submitting reviewed notes to Anki...');
+    try {
+      const resp = await fetch(`/api/confirm/${confirmationJobId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({choices: reviewChoices}),
+      });
+      const payload = await resp.json();
+      if (!resp.ok) {
+        throw new Error(payload.error || 'confirm request failed');
+      }
+      setResult((prev) => ({...prev, summary: payload.anki_summary || prev.summary}));
+      setConfirmationJobId('');
+      setReviewItems([]);
+      setReviewChoices([]);
+      setReviewIndex(0);
+      setAddedBatchWords(new Set());
+      setAddingBatchWords(new Set());
+      setStatusText('Reviewed notes were added to Anki.');
+    } catch (error) {
+      setStatusText(`Could not confirm add: ${error}`);
+    } finally {
+      setConfirmingAdd(false);
+    }
+  }
+
+  async function fetchAnkiOptions() {
+    setLoadingAnkiOptions(true);
+    try {
+      const query = new URLSearchParams({anki_url: formState.anki_url || ''});
+      const resp = await fetch(`/api/anki-options?${query.toString()}`);
+      const payload = await resp.json();
+      if (!resp.ok) {
+        throw new Error(payload.error || 'could not fetch Anki options');
+      }
+      setAnkiModels(payload.models || []);
+      setAnkiDecks(payload.decks || []);
+      setStatusText('Loaded Anki model/deck lists.');
+    } catch (error) {
+      setStatusText(`Could not load Anki options: ${error}`);
+      setAnkiModels([]);
+      setAnkiDecks([]);
+    } finally {
+      setLoadingAnkiOptions(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!formState.anki_connect) {
+      setAnkiModels([]);
+      setAnkiDecks([]);
+      return;
+    }
+    fetchAnkiOptions();
+  }, [formState.anki_connect, formState.anki_url, showAnkiUrl]);
+
+  function updateReviewChoice(rowIndex, selectedIndex) {
+    setReviewChoices((prev) => {
+      const next = [...prev];
+      next[rowIndex] = selectedIndex;
+      return next;
+    });
+  }
+
+  function selectedOptionForRow(rowIndex) {
+    const item = reviewItems[rowIndex];
+    if (!item || !item.options || item.options.length === 0) {
+      return null;
+    }
+    const selectedIndex = Number.isInteger(reviewChoices[rowIndex]) ? reviewChoices[rowIndex] : (item.selected_index || 0);
+    if (selectedIndex < 0 || selectedIndex >= item.options.length) {
+      return item.options[0];
+    }
+    return item.options[selectedIndex];
+  }
+
+  function currentReviewItem() {
+    return reviewItems[reviewIndex] || null;
+  }
+
+  function currentReviewChoice() {
+    const item = currentReviewItem();
+    if (!item || !item.options || item.options.length === 0) {
+      return 0;
+    }
+    const selectedIndex = Number.isInteger(reviewChoices[reviewIndex])
+      ? reviewChoices[reviewIndex]
+      : (item.selected_index || 0);
+    if (selectedIndex < 0 || selectedIndex >= item.options.length) {
+      return 0;
+    }
+    return selectedIndex;
+  }
+
+  function setCurrentReviewChoice(selectedIndex) {
+    updateReviewChoice(reviewIndex, selectedIndex);
+  }
+
+  function goToReviewIndex(nextIndex) {
+    const clamped = Math.max(0, Math.min(reviewItems.length - 1, nextIndex));
+    setReviewIndex(clamped);
+  }
+
+
+
+  async function requestRelatedWordInBatch(word) {
+    const cleanWord = String(word || '').trim();
+    if (!cleanWord) {
+      return;
+    }
+    if (addedBatchWords.has(cleanWord)) {
+      setStatusText(`Already added to batch: ${cleanWord}`);
+      return;
+    }
+    if (addingBatchWords.has(cleanWord)) {
+      return;
+    }
+    if (!confirmationJobId) {
+      setStatusText('Cannot add to batch right now. Please regenerate and try again.');
+      return;
+    }
+
+    setAddingBatchWords((prev) => new Set([...prev, cleanWord]));
+    setStatusText(`Adding to review batch: ${cleanWord}`);
+
+    try {
+      const resp = await fetch(`/api/review-add-word/${confirmationJobId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({word: cleanWord}),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        throw new Error(data.error || `HTTP ${resp.status}`);
+      }
+
+      if (!data.review_item) {
+        setStatusText(`No Jisho entry found for: ${cleanWord}`);
+        return;
+      }
+
+      const selectedIndex = Number.isInteger(data.selected_index) ? data.selected_index : 0;
+      const selectedOption = data.review_item.options?.[selectedIndex] || data.review_item.options?.[0] || {meaning: '', reading_preview: '', reading: ''};
+
+      setReviewItems((prev) => [...prev, data.review_item]);
+      setReviewChoices((prev) => [...prev, selectedIndex]);
+      setPreviewRows((prev) => [
+        ...prev,
+        {
+          word: data.review_item.word || cleanWord,
+          meaning: selectedOption.meaning || '',
+          reading: selectedOption.reading_preview || selectedOption.reading || '',
+        },
+      ]);
+      setAddedBatchWords((prev) => new Set([...prev, cleanWord]));
+      setStatusText(`Added to batch: ${cleanWord}`);
+    } catch (error) {
+      setStatusText(`Error adding ${cleanWord} to batch: ${error}`);
+    } finally {
+      setAddingBatchWords((prev) => {
+        const next = new Set(prev);
+        next.delete(cleanWord);
+        return next;
+      });
+    }
+  }
+
+  function sanitizeLogLine(line) {
+    return line.replace(/<!-- accent_start -->[\s\S]*?<!-- accent_end -->/g, '[pitch SVG omitted]');
+  }
+
   if (!bootLoaded) {
     return <div className="shell"><div className="status">Loading app...</div></div>;
   }
 
   const showSentenceCardSettings = formState.include_sentences && formState.separate_sentence_cards;
+  const reviewSectionVisible = formState.review_before_anki && previewRows.length > 0;
+  const reviewSectionReady = reviewSectionVisible && reviewItems.length > 0;
 
   return (
     <div className="shell">
@@ -217,165 +512,389 @@ export default function App() {
           <h1>Simple Japanese Card Generator</h1>
         </header>
 
-        <section className="status-block" aria-live="polite">
-          <div className="status-head">{statusText}</div>
-          <div className="progress-track"><div className="progress-fill" style={{width: `${progressPct}%`}} /></div>
-          <div className="progress-meta">{progress.status} ({progress.completed}/{progress.total})</div>
-          <pre className="log-box">{(progress.log || []).join('\n')}</pre>
-          {result.message ? <p className="result-line">{result.message}</p> : null}
-          {result.summary ? <p className="result-line">{result.summary}</p> : null}
-        </section>
-
-        <form onSubmit={startGeneration} className="stack">
-          <section className="card">
-            <h2>Setup</h2>
-            <p className="hint">Use preset values as a starting point, then edit visible fields.</p>
-            <div className="grid two">
-              <label>Preset
-                <select value={formState.preset} onChange={(e) => updateField('preset', e.target.value)}>
-                  <option value="">(none)</option>
-                  {presets.map((preset) => <option key={preset} value={preset}>{preset}</option>)}
-                </select>
-              </label>
-              <label>Env file path (optional)
-                <input value={formState.env_file} onChange={(e) => updateField('env_file', e.target.value)} placeholder="configs/my-import.env" />
-              </label>
-            </div>
-            <button type="button" className="ghost" onClick={applyPreset} disabled={loadingPreset}>
-              {loadingPreset ? 'Applying Preset...' : 'Apply Preset To Form'}
-            </button>
-          </section>
-
-          <section className="card">
-            <h2>Input & Output</h2>
-            <div className="grid two">
-              <label className="full">Words (one per line)
-                <textarea value={formState.words} onChange={(e) => updateField('words', e.target.value)} placeholder={'食べる\n勉強\n試合'} />
-              </label>
-
-              <label className="full">Output TSV path
-                <input value={formState.output_path} onChange={(e) => updateField('output_path', e.target.value)} />
-              </label>
-            </div>
-            <label className="toggle">
-              <input type="checkbox" checked={formState.include_header} onChange={(e) => updateField('include_header', e.target.checked)} />
-              Include header row in TSV
-            </label>
-          </section>
-
-          <section className="card">
-            <h2>Content Options</h2>
-            <div className="toggle-list">
-              <label className="toggle">
-                <input type="checkbox" checked={formState.include_sentences} onChange={(e) => updateField('include_sentences', e.target.checked)} />
-                Include example sentences
-              </label>
-              <label className="toggle">
-                <input type="checkbox" checked={formState.include_pitch_accent} onChange={(e) => updateField('include_pitch_accent', e.target.checked)} />
-                Include pitch accent SVG
-              </label>
-            </div>
-
-            {formState.include_sentences ? (
-              <div className="inline-options">
-                <label>Sentence count per word
-                  <input type="number" min="0" step="1" value={formState.sentence_count} onChange={(e) => updateField('sentence_count', e.target.value)} />
+        <div className="main-columns">
+          <section className="status-column">
+            <section className="status-block" aria-live="polite">
+              <div className="status-head">{statusText}</div>
+              <div className="progress-track"><div className="progress-fill" style={{width: `${progressPct}%`}} /></div>
+              {formState.anki_connect ? (
+                <label className="toggle" style={{marginTop: '0.45rem'}}>
+                  <input type="checkbox" checked={formState.review_before_anki} onChange={(e) => updateField('review_before_anki', e.target.checked)} />
+                  Review generated rows before sending to Anki
                 </label>
-                <label className="toggle">
-                  <input type="checkbox" checked={formState.separate_sentence_cards} onChange={(e) => updateField('separate_sentence_cards', e.target.checked)} />
-                  Create separate sentence cards
-                </label>
-              </div>
-            ) : null}
-          </section>
+              ) : null}
 
-          <section className="card">
-            <h2>Destination</h2>
-            <label className="toggle">
-              <input type="checkbox" checked={formState.anki_connect} onChange={(e) => updateField('anki_connect', e.target.checked)} />
-              Send notes directly to AnkiConnect
-            </label>
+              {reviewSectionVisible ? (
+                <section className="review-panel review-panel-inline">
+                  <div className="review-panel-head">
+                    <div>
+                      <div className="review-kicker">Review before add</div>
+                      <h3>Choose the right definition for each word</h3>
+                      <p className="hint">Pick the candidate you want for this note, then confirm to send the reviewed rows to Anki.</p>
+                    </div>
+                    {reviewSectionReady ? (
+                      <div className="review-progress">
+                        {reviewIndex + 1} / {reviewItems.length}
+                      </div>
+                    ) : null}
+                  </div>
 
-            {formState.anki_connect ? (
-              <>
-                <div className="grid two">
-                  <label>AnkiConnect URL
-                    <input value={formState.anki_url} onChange={(e) => updateField('anki_url', e.target.value)} />
-                  </label>
-                  <label>Deck name
-                    <input value={formState.deck_name} onChange={(e) => updateField('deck_name', e.target.value)} />
-                  </label>
-                  <label>Model name
-                    <input value={formState.model_name} onChange={(e) => updateField('model_name', e.target.value)} />
-                  </label>
-                  <label>Tags (comma-separated)
-                    <input value={formState.tags} onChange={(e) => updateField('tags', e.target.value)} />
-                  </label>
-                </div>
-                <label className="toggle">
-                  <input type="checkbox" checked={formState.allow_duplicates} onChange={(e) => updateField('allow_duplicates', e.target.checked)} />
-                  Allow duplicates in Anki
-                </label>
+                  {reviewSectionReady ? (
+                    <>
+                      <div className="review-nav">
+                        <button type="button" className="ghost" onClick={() => goToReviewIndex(reviewIndex - 1)} disabled={reviewIndex === 0}>
+                          Previous
+                        </button>
+                        <button type="button" className="ghost" onClick={() => goToReviewIndex(reviewIndex + 1)} disabled={reviewIndex >= reviewItems.length - 1}>
+                          Next
+                        </button>
+                      </div>
 
-                <details className="advanced-block">
-                  <summary>Edit note field mapping</summary>
-                  <div className="grid two">
-                    <label>Word field
-                      <input value={formState.field_word} onChange={(e) => updateField('field_word', e.target.value)} />
-                    </label>
-                    <label>Meaning field
-                      <input value={formState.field_meaning} onChange={(e) => updateField('field_meaning', e.target.value)} />
-                    </label>
-                    <label>Reading field
-                      <input value={formState.field_reading} onChange={(e) => updateField('field_reading', e.target.value)} />
-                    </label>
+                      {currentReviewItem() ? (
+                        <article className="review-card">
+                          <div className="review-card-top">
+                            <div>
+                              <div className="review-word-label">Word</div>
+                              <div className="review-word" dangerouslySetInnerHTML={{__html: currentReviewItem().word}} />
+                              <div className="review-source">Source: {currentReviewItem().source_word}</div>
+                            </div>
+                            <div className="review-choice-count">
+                              {currentReviewChoice() + 1} of {currentReviewItem().options.length}
+                            </div>
+                          </div>
+
+                          <div className="review-options">
+                            {currentReviewItem().options.map((option, optionIndex) => {
+                              const isSelected = optionIndex === currentReviewChoice();
+                              return (
+                                <button
+                                  key={`${reviewIndex}-${optionIndex}`}
+                                  type="button"
+                                  className={`review-option ${isSelected ? 'selected' : ''}`}
+                                  onClick={() => setCurrentReviewChoice(optionIndex)}
+                                >
+                                  <div className="review-option-head">
+                                    <span className="review-option-badge">{optionIndex + 1}</span>
+                                    <span className="review-option-meaning">{option.meaning || '(blank meaning)'}</span>
+                                  </div>
+                                  <div className="review-option-reading">{option.reading || '(no reading)'}</div>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="review-details">
+                            <div><strong>Selected meaning:</strong> {currentReviewItem().options[currentReviewChoice()]?.meaning || '(blank meaning)'}</div>
+                            <div><strong>Selected reading:</strong> {currentReviewItem().options[currentReviewChoice()]?.reading || '(no reading)'}</div>
+                          </div>
+
+                          {(currentReviewItem().related_words || []).length > 0 ? (
+                            <div className="review-related-block">
+                              <div className="review-preview-label">Related words from Jisho</div>
+                              <div className="review-related-list">
+                                {(currentReviewItem().related_words || []).map((related, idx) => (
+                                  <div className="review-related-item" key={`${currentReviewItem().source_word}-${idx}-${related.word}`}>
+                                    <div className="review-related-main">
+                                      <div className="review-related-head"><strong>{related.word}</strong>{related.reading ? ` (${related.reading})` : ''}</div>
+                                      <div className="review-related-meaning">{related.meaning || '(no meaning)'}</div>
+                                    </div>
+                                      {(() => {
+                                        const isAdded = addedBatchWords.has(related.word);
+                                        const isAdding = addingBatchWords.has(related.word);
+                                        return (
+                                          <button
+                                            type="button"
+                                            className={`ghost ${isAdded ? 'disabled' : ''}`}
+                                            disabled={isAdded || isAdding}
+                                            onClick={() => requestRelatedWordInBatch(related.word)}
+                                            style={(isAdded || isAdding) ? {opacity: 0.5, cursor: 'not-allowed'} : {}}
+                                          >
+                                            {isAdded ? 'Added \u2713' : (isAdding ? 'Adding...' : 'Add To Batch')}
+                                          </button>
+                                        );
+                                      })()}
+                                  </div>
+                                ))}
+                              </div>
+                                <p className="hint">Click to fetch Jisho entry and add to your review queue.</p>
+                            </div>
+                          ) : null}
+                        </article>
+                      ) : null}
+
+                      <div className="review-nav review-nav-bottom">
+                        <button type="button" className="ghost" onClick={() => goToReviewIndex(reviewIndex - 1)} disabled={reviewIndex === 0}>
+                          Previous
+                        </button>
+                        <button type="button" className="ghost" onClick={() => goToReviewIndex(reviewIndex + 1)} disabled={reviewIndex >= reviewItems.length - 1}>
+                          Next
+                        </button>
+                        <button className="submit" type="button" onClick={confirmAddToAnki} disabled={confirmingAdd || !confirmationJobId}>
+                          {confirmingAdd ? 'Confirming...' : 'Confirm and Add Reviewed Notes to Anki'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="hint">Review mode is enabled, but the reviewed card data has not loaded yet.</p>
+                  )}
+                </section>
+              ) : null}
+
+              {result.message ? <p className="result-line">{result.message}</p> : null}
+              {result.summary ? <p className="result-line">{result.summary}</p> : null}
+
+              {previewRows.length > 0 && !confirmationJobId ? (
+                <details className="advanced-block" open={formState.review_before_anki}>
+                  <summary>Generated card preview ({previewRows.length} rows)</summary>
+                  <div className="log-box" style={{maxHeight: '420px', overflow: 'auto'}}>
+                    {previewRows.map((row, index) => (
+                      <div key={`${row.word}-${index}`} style={{marginBottom: '1rem', paddingBottom: '0.8rem', borderBottom: '1px solid #e2e8e2'}}>
+                        <strong>{index + 1}. <span dangerouslySetInnerHTML={{__html: row.word}} /></strong><br />
+                        <div style={{marginTop: '0.35rem'}}>
+                          <strong>Reading:</strong>
+                          {row.reading && row.reading.includes('<svg') ? (
+                            <div dangerouslySetInnerHTML={{__html: row.reading.replace(/color:#f5f5f5/g, 'color:#000000').replace(/fill:#f5f5f5/g, 'fill:#000000').replace(/stroke:#f5f5f5/g, 'stroke:#000000')}} />
+                          ) : (
+                            <span> {row.reading}</span>
+                          )}
+                        </div>
+                        <div style={{marginTop: '0.2rem'}}>
+                          <strong>Meaning:</strong> {row.meaning}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </details>
+              ) : null}
 
-                {showSentenceCardSettings ? (
-                  <details className="advanced-block" open>
-                    <summary>Sentence card note mapping</summary>
-                    <div className="grid two">
-                      <label>Sentence deck
-                        <input value={formState.sentence_deck_name} onChange={(e) => updateField('sentence_deck_name', e.target.value)} />
-                      </label>
-                      <label>Sentence model
-                        <input value={formState.sentence_model_name} onChange={(e) => updateField('sentence_model_name', e.target.value)} />
-                      </label>
-                      <label>Sentence front field
-                        <input value={formState.sentence_front_field} onChange={(e) => updateField('sentence_front_field', e.target.value)} />
-                      </label>
-                      <label>Sentence back field
-                        <input value={formState.sentence_back_field} onChange={(e) => updateField('sentence_back_field', e.target.value)} />
-                      </label>
-                    </div>
-                  </details>
-                ) : null}
-              </>
-            ) : (
-              <p className="hint">Cards will only be written to the TSV file.</p>
-            )}
+              {previewSentenceRows.length > 0 ? (
+                <details className="advanced-block">
+                  <summary>Generated sentence-card preview ({previewSentenceRows.length} shown)</summary>
+                  <div className="log-box" style={{maxHeight: '220px', overflow: 'auto'}}>
+                    {previewSentenceRows.map((row, index) => (
+                      <div key={`${row.front}-${index}`} style={{marginBottom: '0.7rem'}}>
+                        <strong>{index + 1}. {row.front}</strong><br />
+                        Back: {row.back}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+
+            </section>
           </section>
 
-          <details className="card advanced-block">
-            <summary>Performance tuning</summary>
-            <div className="grid three">
-              <label>Pause seconds
-                <input type="number" min="0" step="0.1" value={formState.pause_seconds} onChange={(e) => updateField('pause_seconds', e.target.value)} />
-              </label>
-              <label>Candidate limit
-                <input type="number" min="1" step="1" value={formState.candidate_limit} onChange={(e) => updateField('candidate_limit', e.target.value)} />
-              </label>
-              <label>Max workers
-                <input type="number" min="1" step="1" value={formState.max_workers} onChange={(e) => updateField('max_workers', e.target.value)} />
-              </label>
-            </div>
-          </details>
+          <form onSubmit={startGeneration} className="stack settings-column">
+            <section className="card">
+              <h2>Setup</h2>
+              <p className="hint">Use preset values as a starting point, then edit visible fields.</p>
+              <div className="grid two">
+                <label>Preset
+                  <select value={formState.preset} onChange={(e) => updateField('preset', e.target.value)}>
+                    <option value="">(none)</option>
+                    {presets.map((preset) => <option key={preset} value={preset}>{preset}</option>)}
+                  </select>
+                </label>
+                <label>Env file path (optional)
+                  <input value={formState.env_file} onChange={(e) => updateField('env_file', e.target.value)} placeholder="configs/my-import.env" />
+                </label>
+              </div>
+              <button type="button" className="ghost" onClick={applyPreset} disabled={loadingPreset}>
+                {loadingPreset ? 'Applying Preset...' : 'Apply Preset To Form'}
+              </button>
+            </section>
 
-          <button className="submit" type="submit" disabled={Boolean(jobId)}>
-            {jobId ? 'Generating...' : 'Generate Cards'}
-          </button>
-        </form>
+            <div className="settings-grid">
+              <div className="settings-subcolumn">
+                <section className="card">
+                  <h2>Input & Output</h2>
+                  <div className="grid two">
+                    <label className="full">Words (one per line)
+                      <textarea value={formState.words} onChange={(e) => updateField('words', e.target.value)} placeholder={'食べる\n勉強\n試合'} />
+                    </label>
+
+                    <label className="toggle full">
+                      <input type="checkbox" checked={showOutputPath} onChange={(e) => setShowOutputPath(e.target.checked)} />
+                      Set custom Output TSV path
+                    </label>
+
+                    {showOutputPath ? (
+                      <label className="full">Output TSV path
+                        <input value={formState.output_path} onChange={(e) => updateField('output_path', e.target.value)} />
+                      </label>
+                    ) : null}
+                  </div>
+                  <label className="toggle">
+                    <input type="checkbox" checked={formState.include_header} onChange={(e) => updateField('include_header', e.target.checked)} />
+                    Include header row in TSV
+                  </label>
+                </section>
+
+                <section className="card">
+                  <h2>Content Options</h2>
+                  <div className="toggle-list">
+                    <label className="toggle">
+                      <input type="checkbox" checked={formState.include_sentences} onChange={(e) => updateField('include_sentences', e.target.checked)} />
+                      Include example sentences
+                    </label>
+                    <label className="toggle">
+                      <input type="checkbox" checked={formState.include_pitch_accent} onChange={(e) => updateField('include_pitch_accent', e.target.checked)} />
+                      Include pitch accent SVG
+                    </label>
+                    <label className="toggle">
+                      <input type="checkbox" checked={formState.include_furigana} onChange={(e) => updateField('include_furigana', e.target.checked)} />
+                      Add furigana to word field
+                    </label>
+                  </div>
+
+                  <div className="inline-options">
+                    {formState.include_pitch_accent ? (
+                      <label>Pitch SVG line/dot/text color
+                        <select value={formState.pitch_accent_theme} onChange={(e) => updateField('pitch_accent_theme', e.target.value)}>
+                          <option value="dark">Light lines (for dark backgrounds)</option>
+                          <option value="light">Dark lines (for light backgrounds)</option>
+                        </select>
+                      </label>
+                    ) : null}
+                    {formState.include_furigana ? (
+                      <label>Furigana format
+                        <select value={formState.furigana_format} onChange={(e) => updateField('furigana_format', e.target.value)}>
+                          <option value="ruby">ruby</option>
+                          <option value="anki">anki</option>
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  {formState.include_pitch_accent ? (
+                    <p className="hint">Foreground only; background stays transparent.</p>
+                  ) : null}
+
+                  {formState.include_sentences ? (
+                    <div className="inline-options">
+                      <label>Sentence count per word
+                        <input type="number" min="0" step="1" value={formState.sentence_count} onChange={(e) => updateField('sentence_count', e.target.value)} />
+                      </label>
+                      <label className="toggle">
+                        <input type="checkbox" checked={formState.separate_sentence_cards} onChange={(e) => updateField('separate_sentence_cards', e.target.checked)} />
+                        Create separate sentence cards
+                      </label>
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+
+              <div className="settings-subcolumn">
+                <section className="card">
+                  <h2>Destination</h2>
+                  <label className="toggle">
+                    <input type="checkbox" checked={formState.anki_connect} onChange={(e) => updateField('anki_connect', e.target.checked)} />
+                    Send notes directly to AnkiConnect
+                  </label>
+
+                  {formState.anki_connect ? (
+                    <>
+                      <label className="toggle">
+                        <input type="checkbox" checked={showAnkiUrl} onChange={(e) => setShowAnkiUrl(e.target.checked)} />
+                        Use custom AnkiConnect URL
+                      </label>
+
+                      <div className="grid two">
+                        {showAnkiUrl ? (
+                          <label>AnkiConnect URL
+                            <input value={formState.anki_url} onChange={(e) => updateField('anki_url', e.target.value)} />
+                          </label>
+                        ) : null}
+                        <label>Deck name (destination)
+                          <input
+                            value={formState.deck_name}
+                            onChange={(e) => updateField('deck_name', e.target.value)}
+                            list="deck-name-options"
+                          />
+                          <datalist id="deck-name-options">
+                            {[...new Set(ankiDecks)].filter(Boolean).map((deck) => (
+                              <option key={deck} value={deck} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label>Model name
+                          <select value={formState.model_name} onChange={(e) => updateField('model_name', e.target.value)}>
+                            {[...new Set([formState.model_name, ...ankiModels])].filter(Boolean).map((model) => (
+                              <option key={model} value={model}>{model}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>Tags (comma-separated)
+                          <input value={formState.tags} onChange={(e) => updateField('tags', e.target.value)} />
+                        </label>
+                      </div>
+                      {loadingAnkiOptions ? <p className="hint">Loading model/deck options from Anki...</p> : null}
+                      <label className="toggle">
+                        <input type="checkbox" checked={formState.allow_duplicates} onChange={(e) => updateField('allow_duplicates', e.target.checked)} />
+                        Allow duplicates in Anki
+                      </label>
+
+                      <details className="advanced-block">
+                        <summary>Edit note field mapping</summary>
+                        <div className="grid two">
+                          <label>Word field
+                            <input value={formState.field_word} onChange={(e) => updateField('field_word', e.target.value)} />
+                          </label>
+                          <label>Meaning field
+                            <input value={formState.field_meaning} onChange={(e) => updateField('field_meaning', e.target.value)} />
+                          </label>
+                          <label>Reading field
+                            <input value={formState.field_reading} onChange={(e) => updateField('field_reading', e.target.value)} />
+                          </label>
+                        </div>
+                      </details>
+
+                      {showSentenceCardSettings ? (
+                        <details className="advanced-block" open>
+                          <summary>Sentence card note mapping</summary>
+                          <div className="grid two">
+                            <label>Sentence deck
+                              <input value={formState.sentence_deck_name} onChange={(e) => updateField('sentence_deck_name', e.target.value)} />
+                            </label>
+                            <label>Sentence model
+                              <input value={formState.sentence_model_name} onChange={(e) => updateField('sentence_model_name', e.target.value)} />
+                            </label>
+                            <label>Sentence front field
+                              <input value={formState.sentence_front_field} onChange={(e) => updateField('sentence_front_field', e.target.value)} />
+                            </label>
+                            <label>Sentence back field
+                              <input value={formState.sentence_back_field} onChange={(e) => updateField('sentence_back_field', e.target.value)} />
+                            </label>
+                          </div>
+                        </details>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="hint">Cards will only be written to the TSV file.</p>
+                  )}
+                </section>
+
+                <section className="card advanced-block">
+                  <h2>Performance tuning</h2>
+                  <div className="grid three">
+                    <label>Pause seconds
+                      <input type="number" min="0" step="0.1" value={formState.pause_seconds} onChange={(e) => updateField('pause_seconds', e.target.value)} />
+                    </label>
+                    <label>Candidate limit
+                      <input type="number" min="1" step="1" value={formState.candidate_limit} onChange={(e) => updateField('candidate_limit', e.target.value)} />
+                    </label>
+                    <label>Max workers
+                      <input type="number" min="1" step="1" value={formState.max_workers} onChange={(e) => updateField('max_workers', e.target.value)} />
+                    </label>
+                  </div>
+                </section>
+
+                <button className="submit" type="submit" disabled={Boolean(jobId)}>
+                  {jobId ? 'Generating...' : 'Generate Cards'}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       </main>
     </div>
   );

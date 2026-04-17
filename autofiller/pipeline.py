@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
+from .furigana import add_furigana
 from .jisho_client import JishoClient
 from .models import CardRow, ExampleSentence, SearchCandidate, SentenceCardRow
 from .pitch_accent import enrich_html_with_pitch
@@ -76,6 +77,9 @@ def _build_word_result(
     include_sentences: bool,
     separate_sentence_cards: bool,
     include_pitch_accent: bool,
+    pitch_accent_theme: str,
+    include_furigana: bool,
+    furigana_format: str,
     interactive_review: bool,
     selector: Callable[[str, list[SearchCandidate]], SearchCandidate],
 ) -> tuple[CardRow, list[SentenceCardRow], str, str]:
@@ -88,6 +92,9 @@ def _build_word_result(
         include_sentences: Whether to append sentences into meaning text.
         separate_sentence_cards: Whether to emit sentence rows separately.
         include_pitch_accent: Whether to enrich reading with pitch SVG.
+        pitch_accent_theme: Visual theme used by pitch SVG (`dark` or `light`).
+        include_furigana: Whether to annotate the word with furigana markup.
+        furigana_format: Furigana rendering format (`ruby` or `anki`).
         interactive_review: Whether candidate selection is interactive.
         selector: Candidate selection callback used in interactive mode.
 
@@ -110,6 +117,10 @@ def _build_word_result(
 
     meaning = selected.meaning
     reading = _to_hiragana(selected.reading)
+    rendered_word = word
+
+    if include_furigana and reading:
+        rendered_word = add_furigana(word, reading, fmt=furigana_format)
 
     if include_sentences and meaning and not separate_sentence_cards:
         sentence_text = format_sentences(sentences)
@@ -130,13 +141,13 @@ def _build_word_result(
             )
 
     if include_pitch_accent:
-        pitch_html = enrich_html_with_pitch(word, reading)
+        pitch_html = enrich_html_with_pitch(word, reading, theme=pitch_accent_theme)
         if pitch_html:
             # In pitch mode, the reading field should only show the rendered graph,
             # since the graph already includes the reading text.
             reading = pitch_html
 
-    row = CardRow(word=word, meaning=meaning, reading=reading)
+    row = CardRow(word=rendered_word, meaning=meaning, reading=reading)
     return row, sentence_rows, reading, selected.meaning
 
 
@@ -149,6 +160,9 @@ def build_rows(
     include_sentences: bool,
     separate_sentence_cards: bool,
     include_pitch_accent: bool,
+    pitch_accent_theme: str,
+    include_furigana: bool,
+    furigana_format: str,
     max_workers: int,
     interactive_review: bool,
     selector: Callable[[str, list[SearchCandidate]], SearchCandidate] | None = None,
@@ -164,6 +178,9 @@ def build_rows(
         include_sentences: Whether to append sentences into meaning field.
         separate_sentence_cards: Whether to emit sentence rows as separate notes.
         include_pitch_accent: Whether to append pitch accent SVG snippets.
+        pitch_accent_theme: Visual theme used by pitch SVG (`dark` or `light`).
+        include_furigana: Whether to annotate words with furigana markup.
+        furigana_format: Furigana rendering format (`ruby` or `anki`).
         max_workers: Max worker threads for parallel mode.
         interactive_review: Whether to enable interactive candidate review.
         selector: Optional candidate selector override.
@@ -192,6 +209,9 @@ def build_rows(
                     include_sentences=include_sentences,
                     separate_sentence_cards=separate_sentence_cards,
                     include_pitch_accent=include_pitch_accent,
+                    pitch_accent_theme=pitch_accent_theme,
+                    include_furigana=include_furigana,
+                    furigana_format=furigana_format,
                     interactive_review=interactive_review,
                     selector=select_candidate,
                 ): (index, word)
@@ -206,9 +226,7 @@ def build_rows(
                 sentence_rows.extend(generated_sentence_rows)
                 completed += 1
                 if progress_printer is not None:
-                    progress_printer(
-                        f"[{completed}/{len(words)}] {word} -> reading='{reading}' meaning='{plain_meaning}'"
-                    )
+                    progress_printer(f"[{completed}/{len(words)}] {word}")
 
         return rows, sentence_rows
 
@@ -220,6 +238,9 @@ def build_rows(
             include_sentences=include_sentences,
             separate_sentence_cards=separate_sentence_cards,
             include_pitch_accent=include_pitch_accent,
+            pitch_accent_theme=pitch_accent_theme,
+            include_furigana=include_furigana,
+            furigana_format=furigana_format,
             interactive_review=interactive_review,
             selector=select_candidate,
         )
@@ -227,9 +248,7 @@ def build_rows(
         sentence_rows.extend(generated_sentence_rows)
 
         if progress_printer is not None:
-            progress_printer(
-                f"[{index}/{len(words)}] {word} -> reading='{reading}' meaning='{plain_meaning}'"
-            )
+            progress_printer(f"[{index}/{len(words)}] {word}")
 
         if pause_seconds > 0:
             time.sleep(pause_seconds)
