@@ -221,6 +221,26 @@ def _build_from_form(
         form_data.get("include_pitch_accent"),
         default=bool(settings["include_pitch_accent"]),
     )
+    pitch_accent_theme = _value_from_form(
+        form_data,
+        "pitch_accent_theme",
+        str(settings["pitch_accent_theme"]),
+    ).lower()
+    if pitch_accent_theme not in {"dark", "light"}:
+        pitch_accent_theme = "dark"
+
+    include_furigana = _bool_from_form(
+        form_data.get("include_furigana"),
+        default=bool(settings["include_furigana"]),
+    )
+    furigana_format = _value_from_form(
+        form_data,
+        "furigana_format",
+        str(settings["furigana_format"]),
+    ).lower()
+    if furigana_format not in {"ruby", "anki"}:
+        furigana_format = "ruby"
+
     separate_sentence_cards = _bool_from_form(
         form_data.get("separate_sentence_cards"),
         default=bool(settings["separate_sentence_cards"]),
@@ -234,6 +254,9 @@ def _build_from_form(
         include_sentences=include_sentences,
         separate_sentence_cards=separate_sentence_cards,
         include_pitch_accent=include_pitch_accent,
+        pitch_accent_theme=pitch_accent_theme,
+        include_furigana=include_furigana,
+        furigana_format=furigana_format,
         max_workers=max(1, max_workers),
         interactive_review=False,
         progress_printer=progress_printer,
@@ -252,9 +275,27 @@ def _build_from_form(
     write_tsv(rows=rows, output_path=output_path, include_header=include_header)
 
     anki_summary = ""
+    review_before_anki = _bool_from_form(
+        form_data.get("review_before_anki"),
+        default=bool(settings["review_before_anki"]),
+    )
+
     if _bool_from_form(
         form_data.get("anki_connect"), default=bool(settings["anki_connect"])
     ):
+        if review_before_anki:
+            anki_summary = (
+                "Review mode enabled: preview generated, no notes were sent to Anki."
+            )
+            return {
+                "rows": rows,
+                "output_path": str(output_path),
+                "message": f"Generated {len(rows)} rows.",
+                "anki_summary": anki_summary,
+                "preset": preset_name,
+                "env_file": env_file,
+            }
+
         anki_url = _value_from_form(form_data, "anki_url", str(settings["anki_url"]))
         deck_name = _value_from_form(form_data, "deck_name", str(settings["deck_name"]))
         model_name = _value_from_form(
