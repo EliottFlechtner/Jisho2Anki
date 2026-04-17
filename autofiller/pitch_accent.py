@@ -19,6 +19,10 @@ _BRACKETED_RE = re.compile(r"[\[\(\{][^\]\)\}]*[\]\)\}]")
 ADDON_ID = "148002038"
 DEFAULT_COMMENT_START = "accent_start"
 DEFAULT_COMMENT_END = "accent_end"
+PITCH_THEME_COLORS = {
+    "dark": "#f5f5f5",
+    "light": "#111111",
+}
 
 
 def _to_katakana(text: str) -> str:
@@ -340,12 +344,13 @@ def _draw_path(x: int, y: int, step_width: int, direction: str) -> str:
     )
 
 
-def render_pitch_svg(word: str, pattern: str) -> str:
+def render_pitch_svg(word: str, pattern: str, *, theme: str = "dark") -> str:
     """Render a compact SVG pitch graph from morae and accent pattern symbols.
 
     Args:
         word: Kana word to render.
         pattern: Accent pattern symbols.
+        theme: Visual theme (`dark` or `light`) used for SVG foreground color.
 
     Returns:
         Full SVG string, or empty string for invalid inputs.
@@ -359,9 +364,11 @@ def render_pitch_svg(word: str, pattern: str) -> str:
     margin_lr = 16
     width = max(0, ((positions - 1) * step_width) + (margin_lr * 2))
 
+    color = PITCH_THEME_COLORS.get(theme, PITCH_THEME_COLORS["dark"])
+
     svg_parts = [
         f'<svg class="pitch" width="{width}px" height="75px" viewBox="0 0 {width} 75" '
-        'style="color:#f5f5f5;">'
+        f'style="color:{color};">'
     ]
 
     for index, mora in enumerate(morae):
@@ -389,12 +396,15 @@ def render_pitch_svg(word: str, pattern: str) -> str:
     return "".join(svg_parts)
 
 
-def enrich_html_with_pitch(expression: str, reading: str) -> str | None:
+def enrich_html_with_pitch(
+    expression: str, reading: str, *, theme: str = "dark"
+) -> str | None:
     """Build HTML-safe pitch SVG snippet wrapped in sentinel comments.
 
     Args:
         expression: Source expression text.
         reading: Reading field text.
+        theme: Visual theme (`dark` or `light`) used for SVG foreground color.
 
     Returns:
         Comment-wrapped SVG snippet, or None when pitch data is unavailable.
@@ -404,7 +414,7 @@ def enrich_html_with_pitch(expression: str, reading: str) -> str | None:
         return None
 
     hira, pitch = match
-    svg = render_pitch_svg(hira, pitch)
+    svg = render_pitch_svg(hira, pitch, theme=theme)
     if not svg:
         return None
 
