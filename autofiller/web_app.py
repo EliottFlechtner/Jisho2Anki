@@ -22,10 +22,18 @@ from .jisho_client import JishoClient
 from .models import CardRow, SearchCandidate, SentenceCardRow
 from .pipeline import build_rows
 from .pitch_accent import enrich_html_with_pitch
+from .inbox_store import (
+    add_inbox_items,
+    ensure_inbox_db,
+    list_pending_inbox_items,
+    mark_inbox_items_ankied,
+    pending_inbox_count,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, template_folder=str(ROOT_DIR / "templates"))
 PROGRESS_RE = re.compile(r"^\[(\d+)/(\d+)\]")
+ensure_inbox_db()
 
 
 def _runtime_env(name: str, default: str) -> str:
@@ -49,6 +57,23 @@ DEFAULT_FLASK_PORT = int(_runtime_env("FLASK_PORT", os.environ.get("PORT", "5000
 
 JOBS: dict[str, dict[str, Any]] = {}
 JOB_LOCK = threading.Lock()
+
+
+def _parse_inbox_item_ids(raw: str | None) -> list[int]:
+    if raw is None:
+        return []
+    ids: list[int] = []
+    for piece in str(raw).split(","):
+        token = piece.strip()
+        if not token:
+            continue
+        try:
+            value = int(token)
+        except ValueError:
+            continue
+        if value > 0:
+            ids.append(value)
+    return sorted(set(ids))
 
 
 def _static_stylesheet_filename() -> str:
@@ -418,6 +443,8 @@ def _build_from_form(
         default=bool(settings["review_before_anki"]),
     )
 
+    inbox_item_ids = _parse_inbox_item_ids(form_data.get("inbox_item_ids"))
+
     if _bool_from_form(
         form_data.get("anki_connect"), default=bool(settings["anki_connect"])
     ):
@@ -508,6 +535,7 @@ def _build_from_form(
                     "sentence_model_name": sentence_model_name,
                     "sentence_front_field": sentence_front_field,
                     "sentence_back_field": sentence_back_field,
+                    "inbox_item_ids": inbox_item_ids,
                 },
             }
 
@@ -540,6 +568,9 @@ def _build_from_form(
             anki_summary += f", ✓ added {sent_success} sentence card{'' if sent_success == 1 else 's'}"
             if sent_failed:
                 anki_summary += f" ({sent_failed} failed)"
+
+        if success > 0 and inbox_item_ids:
+            mark_inbox_items_ankied(inbox_item_ids)
 
     return {
         "rows": rows,
@@ -692,6 +723,50 @@ def healthz() -> Any:
     return jsonify({"status": "ok"})
 
 
+@app.get("/api/inbox/pending")
+def api_inbox_pending() -> Any:
+    """Return pending inbox rows for import/review in web UI."""
+    limit_raw = request.args.get("limit", "200")
+    try:
+        limit = int(limit_raw)
+    except ValueError:
+        limit = 200
+
+    items = list_pending_inbox_items(limit=limit)
+    return jsonify({"items": items, "count": pending_inbox_count()})
+
+
+@app.post("/api/inbox/add")
+def api_inbox_add() -> Any:
+    """Manually add one or more inbox rows (useful for capture/testing)."""
+    body = request.get_json(silent=True) or {}
+    raw_text = str(body.get("text", ""))
+    source = str(body.get("source", "manual"))
+    if not raw_text.strip():
+        return jsonify({"error": "text is required"}), 400
+
+    parts = [segment.strip() for segment in raw_text.splitlines() if segment.strip()]
+    inserted = add_inbox_items(parts, source=source)
+    return jsonify({"inserted": inserted, "count": len(inserted)})
+
+
+@app.post("/api/inbox/mark-ankied")
+def api_inbox_mark_ankied() -> Any:
+    """Mark inbox rows as ankied after successful Anki submission."""
+    body = request.get_json(silent=True) or {}
+    ids_raw = body.get("ids", []) if isinstance(body, dict) else []
+    if not isinstance(ids_raw, list):
+        return jsonify({"error": "ids must be a list"}), 400
+
+    try:
+        ids = [int(item) for item in ids_raw]
+    except (TypeError, ValueError):
+        return jsonify({"error": "ids must be integers"}), 400
+
+    changed = mark_inbox_items_ankied(ids)
+    return jsonify({"changed": changed, "count": pending_inbox_count()})
+
+
 @app.post("/api/start")
 def api_start() -> Any:
     """Start an async generation job and return its job ID.
@@ -834,6 +909,10 @@ def api_confirm(job_id: str) -> Any:
                 f"deck={pending_add.get('sentence_deck_name', '')}"
             )
 
+        inbox_ids = pending_add.get("inbox_item_ids", [])
+        if success > 0 and isinstance(inbox_ids, list):
+            mark_inbox_items_ankied([int(item) for item in inbox_ids])
+
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
 
@@ -897,11 +976,7 @@ def api_review_items(job_id: str) -> Any:
 
 @app.post("/api/review-add-word/<job_id>")
 def api_review_add_word(job_id: str) -> Any:
-    """Append one related word to an in-progress review job.
-
-    This updates both in-memory review items and the pending add payload so
-    confirm-to-Anki includes the newly added word.
-    """
+    """Add one more reviewed word to a pending batch."""
     with JOB_LOCK:
         job = JOBS.get(job_id)
         if not job:
@@ -914,49 +989,79 @@ def api_review_add_word(job_id: str) -> Any:
         if not isinstance(pending_add, dict):
             return jsonify({"error": "no pending add payload"}), 400
 
-    request_body = request.get_json(silent=True) or {}
-    word = str(request_body.get("word", "")).strip()
+    body = request.get_json(silent=True) or {}
+    word = str(body.get("word", "")).strip()
     if not word:
         return jsonify({"error": "word is required"}), 400
 
     try:
         source_words_raw = pending_add.get("source_words", [])
         source_words = (
-            [str(item).strip() for item in source_words_raw if str(item).strip()]
+            [str(item) for item in source_words_raw]
             if isinstance(source_words_raw, list)
             else []
         )
         if word in source_words:
-            return jsonify({"error": "word already in batch"}), 409
+            return jsonify({"error": f"{word} is already in batch"}), 409
 
+        candidate_limit = int(pending_add.get("candidate_limit", 1))
+        include_pitch_accent = bool(pending_add.get("include_pitch_accent", False))
+        pitch_accent_theme = str(pending_add.get("pitch_accent_theme", "dark"))
         review_items = _build_review_items(
             words=[word],
-            candidate_limit=max(int(pending_add.get("candidate_limit", 1)), 1),
-            include_pitch_accent=bool(pending_add.get("include_pitch_accent", False)),
-            pitch_accent_theme=str(pending_add.get("pitch_accent_theme", "dark")),
+            candidate_limit=max(candidate_limit, 1),
+            include_pitch_accent=include_pitch_accent,
+            pitch_accent_theme=pitch_accent_theme,
             generated_rows=[],
         )
-        if not review_items:
-            return jsonify({"error": "no candidates found"}), 404
+        if review_items:
+            review_item = review_items[0]
+            selected_index = (
+                int(review_item.get("selected_index", 0))
+                if isinstance(review_item, dict)
+                else 0
+            )
+        else:
+            review_item = {
+                "word": word,
+                "source_word": word,
+                "options": [
+                    {
+                        "meaning": "",
+                        "reading": "",
+                        "reading_preview": "",
+                    }
+                ],
+                "related_words": [],
+                "selected_index": 0,
+            }
+            selected_index = 0
 
-        review_item = review_items[0]
         options = (
             review_item.get("options", []) if isinstance(review_item, dict) else []
         )
-        selected_index = 0
-        selected_option = options[0] if isinstance(options, list) and options else {}
-
-        rows_payload = pending_add.get("rows", [])
-        if not isinstance(rows_payload, list):
-            rows_payload = []
-        rows_payload.append(
+        selected_option = (
+            options[selected_index] if isinstance(options, list) and options else {}
+        )
+        pending_rows = pending_add.get("rows", [])
+        if not isinstance(pending_rows, list):
+            pending_rows = []
+        pending_rows.append(
             {
-                "word": str(review_item.get("word", word)),
+                "word": (
+                    str(review_item.get("word", word))
+                    if isinstance(review_item, dict)
+                    else word
+                ),
                 "meaning": str(selected_option.get("meaning", "")),
-                "reading": str(selected_option.get("reading_preview", "")),
+                "reading": str(
+                    selected_option.get(
+                        "reading_preview", selected_option.get("reading", "")
+                    )
+                ),
             }
         )
-        pending_add["rows"] = rows_payload
+        pending_add["rows"] = pending_rows
 
         pending_review_items = pending_add.get("review_items", [])
         if not isinstance(pending_review_items, list):
@@ -968,7 +1073,6 @@ def api_review_add_word(job_id: str) -> Any:
         pending_add["source_words"] = source_words
 
         current_review_items = updated_review_items
-
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
 
@@ -1033,4 +1137,5 @@ def generate() -> str:
 
 
 if __name__ == "__main__":
+    ensure_inbox_db()
     app.run(host=DEFAULT_FLASK_HOST, port=DEFAULT_FLASK_PORT, debug=False)

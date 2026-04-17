@@ -1,7 +1,12 @@
 import {useEffect, useMemo, useState} from 'react';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const SUPABASE_INBOX_TABLE = import.meta.env.VITE_SUPABASE_INBOX_TABLE || 'inbox_items';
+
 const TEXT_FIELDS = [
   'words',
+  'inbox_item_ids',
   'output_path',
   'preset',
   'env_file',
@@ -85,6 +90,7 @@ function toFormData(formState, showOutputPath) {
 }
 
 export default function App() {
+  const captureMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('capture') === '1';
   const [bootLoaded, setBootLoaded] = useState(false);
   const [presets, setPresets] = useState([]);
   const [formState, setFormState] = useState(() => buildInitialState({}));
@@ -107,6 +113,12 @@ export default function App() {
   const [ankiModels, setAnkiModels] = useState([]);
   const [ankiDecks, setAnkiDecks] = useState([]);
   const [loadingAnkiOptions, setLoadingAnkiOptions] = useState(false);
+  const [inboxItems, setInboxItems] = useState([]);
+  const [loadingInbox, setLoadingInbox] = useState(false);
+  const [captureText, setCaptureText] = useState('');
+  const [captureSource, setCaptureSource] = useState('phone');
+  const [captureStatus, setCaptureStatus] = useState('');
+  const [captureSubmitting, setCaptureSubmitting] = useState(false);
 
   function stripHtmlText(value) {
     if (!value) {
@@ -138,6 +150,60 @@ export default function App() {
     });
   }
 
+  async function submitCaptureToSupabase(event) {
+    event.preventDefault();
+    const lines = String(captureText || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (lines.length === 0) {
+      setCaptureStatus('Enter at least one word.');
+      return;
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      setCaptureStatus('Supabase config missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild.');
+      return;
+    }
+
+    setCaptureSubmitting(true);
+    setCaptureStatus('Saving to inbox...');
+
+    try {
+      const payload = lines.map((text) => ({
+        text,
+        source: captureSource || 'phone',
+        received_at_ms: Date.now(),
+        created_at_ms: Date.now(),
+        status: 'pending',
+      }));
+
+      const resp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/${SUPABASE_INBOX_TABLE}`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(body.message || body.error || `HTTP ${resp.status}`);
+      }
+
+      setCaptureStatus(`Saved ${Array.isArray(body) ? body.length : lines.length} item(s).`);
+      setCaptureText('');
+    } catch (error) {
+      setCaptureStatus(`Save failed: ${error}`);
+    } finally {
+      setCaptureSubmitting(false);
+    }
+  }
+
   useEffect(() => {
     let isMounted = true;
     fetch('/api/bootstrap')
@@ -149,6 +215,7 @@ export default function App() {
           const defaults = payload.defaults || {};
           const state = buildInitialState(defaults);
           state.words = '';
+          state.inbox_item_ids = '';
           state.review_before_anki = true;
           setFormState(state);
           setPresets(payload.presets || []);
@@ -218,6 +285,10 @@ export default function App() {
           setAddedBatchWords(new Set());
           setAddingBatchWords(new Set());
           setConfirmationJobId(data.requires_confirmation ? jobId : '');
+          if (!data.requires_confirmation) {
+            setFormState((prev) => ({...prev, inbox_item_ids: ''}));
+            fetchInboxPending();
+          }
           setStatusText('Generation complete.');
           setJobId('');
         }
@@ -275,6 +346,7 @@ export default function App() {
       const payload = await resp.json();
       const merged = buildInitialState(payload.settings || {});
       merged.words = formState.words;
+      merged.inbox_item_ids = formState.inbox_item_ids;
       merged.preset = payload.preset || '';
       merged.env_file = payload.env_file || '';
       setFormState(merged);
@@ -319,6 +391,62 @@ export default function App() {
     }
   }
 
+  async function fetchInboxPending() {
+    setLoadingInbox(true);
+    try {
+      const resp = await fetch('/api/inbox/pending');
+      const payload = await resp.json();
+      if (!resp.ok) {
+        throw new Error(payload.error || 'failed to fetch inbox');
+      }
+      setInboxItems(Array.isArray(payload.items) ? payload.items : []);
+    } catch (error) {
+      setStatusText(`Could not load inbox: ${error}`);
+      setInboxItems([]);
+    } finally {
+      setLoadingInbox(false);
+    }
+  }
+
+  function importPendingInboxToWords() {
+    if (!Array.isArray(inboxItems) || inboxItems.length === 0) {
+      setStatusText('Inbox empty.');
+      return;
+    }
+
+    setFormState((prev) => {
+      const currentWords = String(prev.words || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const existingSet = new Set(currentWords);
+
+      const incomingWords = inboxItems
+        .map((item) => String(item.text || '').trim())
+        .filter(Boolean);
+      const uniqueIncoming = incomingWords.filter((word) => !existingSet.has(word));
+      const mergedWords = [...currentWords, ...uniqueIncoming];
+
+      const existingIds = String(prev.inbox_item_ids || '')
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => Number.parseInt(part, 10))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      const incomingIds = inboxItems
+        .map((item) => Number.parseInt(String(item.id), 10))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      const mergedIds = Array.from(new Set([...existingIds, ...incomingIds]));
+
+      setStatusText(`Imported ${uniqueIncoming.length} new word(s) from inbox.`);
+      return {
+        ...prev,
+        words: mergedWords.join('\n'),
+        inbox_item_ids: mergedIds.join(','),
+      };
+    });
+  }
+
   async function confirmAddToAnki() {
     if (!confirmationJobId) {
       return;
@@ -343,6 +471,8 @@ export default function App() {
       setReviewIndex(0);
       setAddedBatchWords(new Set());
       setAddingBatchWords(new Set());
+      setFormState((prev) => ({...prev, inbox_item_ids: ''}));
+      fetchInboxPending();
       setStatusText('Reviewed notes were added to Anki.');
     } catch (error) {
       setStatusText(`Could not confirm add: ${error}`);
@@ -380,6 +510,10 @@ export default function App() {
     }
     fetchAnkiOptions();
   }, [formState.anki_connect, formState.anki_url, showAnkiUrl]);
+
+  useEffect(() => {
+    fetchInboxPending();
+  }, []);
 
   function updateReviewChoice(rowIndex, selectedIndex) {
     setReviewChoices((prev) => {
@@ -494,6 +628,54 @@ export default function App() {
 
   function sanitizeLogLine(line) {
     return line.replace(/<!-- accent_start -->[\s\S]*?<!-- accent_end -->/g, '[pitch SVG omitted]');
+  }
+
+  if (captureMode) {
+    return (
+      <div className="shell">
+        <main className="panel capture-panel">
+          <header className="hero">
+            <p className="eyebrow">Inbox Capture</p>
+            <h1>Save vocab from phone</h1>
+            <p className="sub">Send words now. Sync on PC later. No same-network requirement.</p>
+          </header>
+
+          <section className="card capture-card">
+            <form className="stack" onSubmit={submitCaptureToSupabase}>
+              <label className="full">Words / expressions (one per line)
+                <textarea value={captureText} onChange={(e) => setCaptureText(e.target.value)} placeholder={"団地\n通快\n頑張る"} rows={8} />
+              </label>
+
+              <label>Source tag
+                <input value={captureSource} onChange={(e) => setCaptureSource(e.target.value)} placeholder="phone" />
+              </label>
+
+              <button className="submit" type="submit" disabled={captureSubmitting}>
+                {captureSubmitting ? 'Saving...' : 'Save To Inbox'}
+              </button>
+            </form>
+
+            <div className="capture-hints">
+              <p className="hint">Setup needs Supabase URL + anon key in build env.</p>
+              <p className="hint">Use this page from GitHub Pages or any static host: add <code>?capture=1</code> to URL.</p>
+              <p className="hint">Example capture URL: <code>https://YOUR_SITE/?capture=1</code></p>
+            </div>
+
+            {captureStatus ? <p className="result-line">{captureStatus}</p> : null}
+
+            {!SUPABASE_URL || !SUPABASE_ANON_KEY ? (
+              <details className="advanced-block" open>
+                <summary>Missing Supabase config</summary>
+                <div className="hint-box">
+                  Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` before building the static capture site.
+                  Then enable RLS insert policy for pending inbox rows in Supabase.
+                </div>
+              </details>
+            ) : null}
+          </section>
+        </main>
+      </div>
+    );
   }
 
   if (!bootLoaded) {
@@ -728,6 +910,34 @@ export default function App() {
                     <input type="checkbox" checked={formState.include_header} onChange={(e) => updateField('include_header', e.target.checked)} />
                     Include header row in TSV
                   </label>
+
+                  <div className="inbox-block">
+                    <div className="inbox-head">
+                      <strong>Inbox</strong>
+                      <span className="hint">{inboxItems.length} pending</span>
+                    </div>
+                    <div className="inbox-actions">
+                      <button type="button" className="ghost" onClick={fetchInboxPending} disabled={loadingInbox}>
+                        {loadingInbox ? 'Refreshing...' : 'Refresh Inbox'}
+                      </button>
+                      <button type="button" className="ghost" onClick={importPendingInboxToWords} disabled={inboxItems.length === 0}>
+                        Import All Pending
+                      </button>
+                    </div>
+                    {inboxItems.length > 0 ? (
+                      <div className="inbox-list">
+                        {inboxItems.slice(0, 12).map((item) => (
+                          <div key={item.id} className="inbox-item">
+                            <span className="inbox-item-text">{item.text}</span>
+                            <span className="inbox-item-meta">#{item.id}</span>
+                          </div>
+                        ))}
+                        {inboxItems.length > 12 ? <p className="hint">Showing first 12 items.</p> : null}
+                      </div>
+                    ) : (
+                      <p className="hint">No pending inbox items.</p>
+                    )}
+                  </div>
                 </section>
 
                 <section className="card">

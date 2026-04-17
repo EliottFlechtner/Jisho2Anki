@@ -534,6 +534,110 @@ class WebApiEndpointTests(unittest.TestCase):
             with web_app_module.JOB_LOCK:
                 web_app_module.JOBS.pop(job_id, None)
 
+    def test_inbox_pending_and_mark_ankied(self) -> None:
+        """Inbox pending endpoint should expose items and mark endpoint should update status."""
+        app = web_app_module.app
+        fake_items = [
+            {
+                "id": 11,
+                "text": "団地",
+                "source": "capture:web",
+                "received_at_ms": 1,
+                "created_at_ms": 1,
+                "status": "pending",
+            }
+        ]
+
+        with (
+            app.test_client() as client,
+            patch(
+                "autofiller.web_app.list_pending_inbox_items", return_value=fake_items
+            ),
+            patch("autofiller.web_app.pending_inbox_count", return_value=1),
+        ):
+            pending_resp = client.get("/api/inbox/pending")
+
+        self.assertEqual(pending_resp.status_code, 200)
+        self.assertEqual(pending_resp.get_json()["count"], 1)
+        self.assertEqual(pending_resp.get_json()["items"][0]["text"], "団地")
+
+        with (
+            app.test_client() as client,
+            patch("autofiller.web_app.mark_inbox_items_ankied", return_value=2),
+            patch("autofiller.web_app.pending_inbox_count", return_value=3),
+        ):
+            mark_resp = client.post("/api/inbox/mark-ankied", json={"ids": [11, 12]})
+
+        self.assertEqual(mark_resp.status_code, 200)
+        self.assertEqual(mark_resp.get_json()["changed"], 2)
+        self.assertEqual(mark_resp.get_json()["count"], 3)
+
+    def test_inbox_add_endpoint_inserts_text_lines(self) -> None:
+        """Inbox add endpoint should split multiline text and store each row."""
+        app = web_app_module.app
+
+        with (
+            app.test_client() as client,
+            patch(
+                "autofiller.web_app.add_inbox_items",
+                side_effect=lambda items, **_kwargs: [
+                    {"id": idx + 1, "text": text} for idx, text in enumerate(items)
+                ],
+            ),
+        ):
+            resp = client.post(
+                "/api/inbox/add",
+                json={"text": "団地\n通快", "source": "capture:web"},
+            )
+
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.get_json()
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(len(payload["inserted"]), 2)
+
+    def test_confirm_marks_inbox_items_ankied(self) -> None:
+        """Confirm endpoint should mark imported inbox item ids as ankied on success."""
+        app = web_app_module.app
+        job_id = "job-confirm-inbox-mark"
+
+        pending_add = {
+            "rows": [{"word": "食べる", "meaning": "eat", "reading": "たべる"}],
+            "sentence_rows": [],
+            "review_items": [],
+            "separate_sentence_cards": False,
+            "anki_url": "http://127.0.0.1:8765",
+            "deck_name": "Example",
+            "model_name": "Jisho2Anki::Vocab",
+            "field_word": "Word",
+            "field_meaning": "Translation",
+            "field_reading": "Reading",
+            "tags": ["jp"],
+            "allow_duplicates": False,
+            "inbox_item_ids": [101, 102],
+        }
+
+        with web_app_module.JOB_LOCK:
+            web_app_module.JOBS[job_id] = {
+                "status": "done",
+                "requires_confirmation": True,
+                "pending_add": pending_add,
+                "anki_summary": "",
+            }
+
+        try:
+            with (
+                app.test_client() as client,
+                patch("autofiller.web_app.add_rows_to_anki", return_value=(1, 0)),
+                patch("autofiller.web_app.mark_inbox_items_ankied") as mark_mock,
+            ):
+                resp = client.post(f"/api/confirm/{job_id}")
+
+            self.assertEqual(resp.status_code, 200)
+            mark_mock.assert_called_once_with([101, 102])
+        finally:
+            with web_app_module.JOB_LOCK:
+                web_app_module.JOBS.pop(job_id, None)
+
 
 if __name__ == "__main__":
     unittest.main()

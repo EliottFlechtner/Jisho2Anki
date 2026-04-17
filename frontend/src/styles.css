@@ -320,6 +320,83 @@ h3 {
   color: var(--ink);
 }
 
+.inbox-block {
+  margin-top: 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f8fbf8;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.inbox-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inbox-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.inbox-list {
+  max-height: 180px;
+  overflow: auto;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.inbox-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  border: 1px solid #e2e8e2;
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+}
+
+.inbox-item-text {
+  font-size: 0.9rem;
+}
+
+.inbox-item-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.capture-panel {
+  max-width: 860px;
+}
+
+.capture-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.capture-hints {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #dfe5df;
+  border-radius: 10px;
+  background: #f8fbf8;
+}
+
+.hint-box {
+  margin-top: 0.55rem;
+  padding: 0.75rem;
+  border: 1px dashed #c8d5cc;
+  border-radius: 10px;
+  background: #fbfdfb;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .review-related-block {
   display: grid;
   gap: 0.5rem;
