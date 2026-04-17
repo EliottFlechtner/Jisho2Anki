@@ -282,10 +282,12 @@ def _draw_circle(x: int, y: int, hollow: bool) -> str:
     Returns:
         SVG snippet for a circle marker.
     """
-    outer = f'<circle r="5" cx="{x}" cy="{y}" style="opacity:1;fill:#000;" />'
     if hollow:
-        outer += f'<circle r="3.25" cx="{x}" cy="{y}" style="opacity:1;fill:#fff;" />'
-    return outer
+        return (
+            f'<circle r="5" cx="{x}" cy="{y}" '
+            'style="opacity:1;fill:none;stroke:currentColor;stroke-width:1.5;" />'
+        )
+    return f'<circle r="5" cx="{x}" cy="{y}" ' 'style="opacity:1;fill:currentColor;" />'
 
 
 def _draw_text(x: int, mora: str) -> str:
@@ -299,10 +301,18 @@ def _draw_text(x: int, mora: str) -> str:
         SVG text snippet.
     """
     if len(mora) == 1:
-        return f'<text x="{x}" y="67.5" style="font-size:20px;font-family:sans-serif;fill:#000;">{mora}</text>'
+        return (
+            f'<text x="{x}" y="67.5" '
+            'style="font-size:20px;font-family:sans-serif;fill:currentColor;">'
+            f"{mora}</text>"
+        )
     return (
-        f'<text x="{x - 5}" y="67.5" style="font-size:20px;font-family:sans-serif;fill:#000;">{mora[0]}</text>'
-        f'<text x="{x + 12}" y="67.5" style="font-size:14px;font-family:sans-serif;fill:#000;">{mora[1]}</text>'
+        f'<text x="{x - 5}" y="67.5" '
+        'style="font-size:20px;font-family:sans-serif;fill:currentColor;">'
+        f"{mora[0]}</text>"
+        f'<text x="{x + 12}" y="67.5" '
+        'style="font-size:14px;font-family:sans-serif;fill:currentColor;">'
+        f"{mora[1]}</text>"
     )
 
 
@@ -324,7 +334,10 @@ def _draw_path(x: int, y: int, step_width: int, direction: str) -> str:
         delta = f"{step_width},-25"
     else:
         delta = f"{step_width},25"
-    return f'<path d="m {x},{y} {delta}" style="fill:none;stroke:#000;stroke-width:1.5;" />'
+    return (
+        f'<path d="m {x},{y} {delta}" '
+        'style="fill:none;stroke:currentColor;stroke-width:1.5;" />'
+    )
 
 
 def render_pitch_svg(word: str, pattern: str) -> str:
@@ -347,7 +360,8 @@ def render_pitch_svg(word: str, pattern: str) -> str:
     width = max(0, ((positions - 1) * step_width) + (margin_lr * 2))
 
     svg_parts = [
-        f'<svg class="pitch" width="{width}px" height="75px" viewBox="0 0 {width} 75">'
+        f'<svg class="pitch" width="{width}px" height="75px" viewBox="0 0 {width} 75" '
+        'style="color:#f5f5f5;">'
     ]
 
     for index, mora in enumerate(morae):
