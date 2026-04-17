@@ -226,9 +226,7 @@ def build_rows(
                 sentence_rows.extend(generated_sentence_rows)
                 completed += 1
                 if progress_printer is not None:
-                    progress_printer(
-                        f"[{completed}/{len(words)}] {word} -> reading='{reading}' meaning='{plain_meaning}'"
-                    )
+                    progress_printer(f"[{completed}/{len(words)}] {word}")
 
         return rows, sentence_rows
 
@@ -250,9 +248,7 @@ def build_rows(
         sentence_rows.extend(generated_sentence_rows)
 
         if progress_printer is not None:
-            progress_printer(
-                f"[{index}/{len(words)}] {word} -> reading='{reading}' meaning='{plain_meaning}'"
-            )
+            progress_printer(f"[{index}/{len(words)}] {word}")
 
         if pause_seconds > 0:
             time.sleep(pause_seconds)

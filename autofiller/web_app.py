@@ -179,10 +179,9 @@ def _build_review_items(
     review_items: list[dict[str, Any]] = []
 
     for index, word in enumerate(words):
-        candidates, _sentences = client.search(
+        candidates, related_candidates = client.search_review(
             word,
             candidate_limit=max(candidate_limit, 1),
-            sentence_limit=0,
         )
         if not candidates:
             candidates = [SearchCandidate(meaning="", reading="")]
@@ -223,6 +222,25 @@ def _build_review_items(
                 ),
                 "source_word": word,
                 "options": options,
+                "related_words": [
+                    {
+                        "word": str(item.get("word", "")),
+                        "meaning": str(item.get("meaning", "")),
+                        "reading": _to_hiragana(str(item.get("reading", ""))),
+                        "reading_preview": (
+                            enrich_html_with_pitch(
+                                str(item.get("word", "")),
+                                _to_hiragana(str(item.get("reading", ""))),
+                                theme=pitch_accent_theme,
+                            )
+                            if include_pitch_accent
+                            else _to_hiragana(str(item.get("reading", "")))
+                        )
+                        or _to_hiragana(str(item.get("reading", ""))),
+                    }
+                    for item in related_candidates
+                    if str(item.get("word", "")).strip()
+                ],
                 "selected_index": selected_index,
             }
         )
@@ -472,6 +490,10 @@ def _build_from_form(
                         sentence_rows, limit=len(sentence_rows)
                     ),
                     "review_items": review_items,
+                    "source_words": words,
+                    "candidate_limit": candidate_limit,
+                    "include_pitch_accent": include_pitch_accent,
+                    "pitch_accent_theme": pitch_accent_theme,
                     "separate_sentence_cards": separate_sentence_cards,
                     "anki_url": anki_url,
                     "deck_name": deck_name,
@@ -499,9 +521,9 @@ def _build_from_form(
             tags=tags,
             allow_duplicates=allow_duplicates,
         )
-        anki_summary = (
-            f"Added to Anki: success={success}, failed={failed}, endpoint={anki_url}"
-        )
+        anki_summary = f"✓ Added {success} card{'' if success == 1 else 's'} to Anki"
+        if failed:
+            anki_summary += f" ({failed} failed)"
 
         if separate_sentence_cards:
             sent_success, sent_failed = add_sentence_rows_to_anki(
@@ -514,10 +536,9 @@ def _build_from_form(
                 tags=tags,
                 allow_duplicates=allow_duplicates,
             )
-            anki_summary += (
-                f" | Sentence cards: success={sent_success}, failed={sent_failed}, "
-                f"deck={sentence_deck_name}"
-            )
+            anki_summary += f", ✓ added {sent_success} sentence card{'' if sent_success == 1 else 's'}"
+            if sent_failed:
+                anki_summary += f" ({sent_failed} failed)"
 
     return {
         "rows": rows,
@@ -822,6 +843,55 @@ def api_confirm(job_id: str) -> Any:
         anki_summary=summary,
     )
     return jsonify({"anki_summary": summary})
+
+
+@app.get("/api/review-items/<job_id>")
+def api_review_items(job_id: str) -> Any:
+    """Rebuild review candidate options for a pending review job.
+
+    Args:
+        job_id: Target job identifier.
+
+    Returns:
+        JSON response containing rebuilt `review_items`.
+    """
+    with JOB_LOCK:
+        job = JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "job not found", "review_items": []}), 404
+
+        if not job.get("requires_confirmation"):
+            return (
+                jsonify(
+                    {
+                        "error": "job does not require confirmation",
+                        "review_items": [],
+                    }
+                ),
+                400,
+            )
+
+        pending_add = job.get("pending_add")
+        if not isinstance(pending_add, dict):
+            return jsonify({"error": "no pending add payload", "review_items": []}), 400
+
+    try:
+        words_raw = pending_add.get("source_words", [])
+        words = [str(word) for word in words_raw] if isinstance(words_raw, list) else []
+        rows = _deserialize_card_rows(pending_add.get("rows", []))
+
+        review_items = _build_review_items(
+            words=words,
+            candidate_limit=int(pending_add.get("candidate_limit", 1)),
+            include_pitch_accent=bool(pending_add.get("include_pitch_accent", False)),
+            pitch_accent_theme=str(pending_add.get("pitch_accent_theme", "dark")),
+            generated_rows=rows,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc), "review_items": []}), 500
+
+    _job_update(job_id, review_items=review_items)
+    return jsonify({"review_items": review_items})
 
 
 @app.post("/generate")
