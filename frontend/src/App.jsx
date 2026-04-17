@@ -9,6 +9,8 @@ const TEXT_FIELDS = [
   'candidate_limit',
   'sentence_count',
   'max_workers',
+  'pitch_accent_theme',
+  'furigana_format',
   'anki_url',
   'deck_name',
   'model_name',
@@ -27,7 +29,9 @@ const CHECK_FIELDS = [
   'include_sentences',
   'separate_sentence_cards',
   'include_pitch_accent',
+  'include_furigana',
   'anki_connect',
+  'review_before_anki',
   'allow_duplicates',
 ];
 
@@ -274,6 +278,25 @@ export default function App() {
                 <input type="checkbox" checked={formState.include_pitch_accent} onChange={(e) => updateField('include_pitch_accent', e.target.checked)} />
                 Include pitch accent SVG
               </label>
+              <label className="toggle">
+                <input type="checkbox" checked={formState.include_furigana} onChange={(e) => updateField('include_furigana', e.target.checked)} />
+                Add furigana to word field
+              </label>
+            </div>
+
+            <div className="inline-options">
+              <label>Pitch SVG theme
+                <select value={formState.pitch_accent_theme} onChange={(e) => updateField('pitch_accent_theme', e.target.value)} disabled={!formState.include_pitch_accent}>
+                  <option value="dark">dark</option>
+                  <option value="light">light</option>
+                </select>
+              </label>
+              <label>Furigana format
+                <select value={formState.furigana_format} onChange={(e) => updateField('furigana_format', e.target.value)} disabled={!formState.include_furigana}>
+                  <option value="ruby">ruby</option>
+                  <option value="anki">anki</option>
+                </select>
+              </label>
             </div>
 
             {formState.include_sentences ? (
@@ -315,6 +338,10 @@ export default function App() {
                 <label className="toggle">
                   <input type="checkbox" checked={formState.allow_duplicates} onChange={(e) => updateField('allow_duplicates', e.target.checked)} />
                   Allow duplicates in Anki
+                </label>
+                <label className="toggle">
+                  <input type="checkbox" checked={formState.review_before_anki} onChange={(e) => updateField('review_before_anki', e.target.checked)} />
+                  Review generated rows before sending to Anki
                 </label>
 
                 <details className="advanced-block">
