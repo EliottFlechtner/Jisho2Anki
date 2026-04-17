@@ -627,6 +627,7 @@ textarea {
 
 .words-textarea {
   min-height: 250px;
+  font-size: 1rem;
 }
 
 .toggle-list {
@@ -657,8 +658,8 @@ textarea {
 .pitch-theme-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  justify-content: flex-end;
+  gap: 0.8rem;
 }
 
 .pitch-theme-label {

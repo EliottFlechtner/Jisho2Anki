@@ -507,7 +507,7 @@ def _build_from_form(
                 "rows": rows,
                 "sentence_rows": sentence_rows,
                 "output_path": str(output_path),
-                "message": f"Generated {len(rows)} rows.",
+                "message": "",
                 "anki_summary": anki_summary,
                 "preset": preset_name,
                 "env_file": env_file,
@@ -905,8 +905,9 @@ def api_confirm(job_id: str) -> Any:
         )
 
         summary = (
-            "Added to Anki after review: "
-            f"success={success}, failed={failed}, endpoint={pending_add.get('anki_url', '')}"
+            f"Added {success} note(s) to Anki."
+            if success > 0
+            else "No notes were added to Anki."
         )
 
         if pending_add.get("separate_sentence_cards"):

@@ -1036,7 +1036,7 @@ export default function App() {
                   <div className="inline-options">
                     {formState.include_pitch_accent ? (
                       <div className="pitch-theme-row">
-                        <span className="pitch-theme-label">Pitch SVG line/dot/text color</span>
+                        <span className="pitch-theme-label">Pitch Accent SVG Color</span>
                         <select
                           className="pitch-theme-select"
                           value={formState.pitch_accent_theme}
