@@ -8,8 +8,6 @@ const TEXT_FIELDS = [
   'words',
   'inbox_item_ids',
   'output_path',
-  'preset',
-  'env_file',
   'pause_seconds',
   'candidate_limit',
   'sentence_count',
@@ -92,7 +90,6 @@ function toFormData(formState) {
 export default function App() {
   const captureMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('capture') === '1';
   const [bootLoaded, setBootLoaded] = useState(false);
-  const [presets, setPresets] = useState([]);
   const [formState, setFormState] = useState(() => buildInitialState({}));
   const [statusText, setStatusText] = useState('Bootstrapping settings...');
   const [progress, setProgress] = useState({status: 'idle', completed: 0, total: 0, log: []});
@@ -107,7 +104,6 @@ export default function App() {
   const [confirmationJobId, setConfirmationJobId] = useState('');
   const [confirmingAdd, setConfirmingAdd] = useState(false);
   const [jobId, setJobId] = useState('');
-  const [loadingPreset, setLoadingPreset] = useState(false);
 
   const [showAnkiUrl, setShowAnkiUrl] = useState(false);
   const [ankiModels, setAnkiModels] = useState([]);
@@ -220,8 +216,7 @@ export default function App() {
           state.inbox_item_ids = '';
           state.review_before_anki = true;
           setFormState(state);
-          setPresets(payload.presets || []);
-          setStatusText('Base defaults loaded. Select a preset to refill fields.');
+          setStatusText('Base defaults loaded.');
           setBootLoaded(true);
         })
         .catch((error) => {
@@ -327,37 +322,6 @@ export default function App() {
 
   function updateField(key, value) {
     setFormState((prev) => ({...prev, [key]: value}));
-  }
-
-  async function applyPreset() {
-    setLoadingPreset(true);
-    setStatusText('Loading preset values...');
-
-    try {
-      const body = new URLSearchParams({
-        preset: formState.preset || '',
-        env_file: formState.env_file || '',
-      });
-
-      const resp = await fetch('/api/settings-preview', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
-        body,
-      });
-
-      const payload = await resp.json();
-      const merged = buildInitialState(payload.settings || {});
-      merged.words = formState.words;
-      merged.inbox_item_ids = formState.inbox_item_ids;
-      merged.preset = payload.preset || '';
-      merged.env_file = payload.env_file || '';
-      setFormState(merged);
-      setStatusText('Preset applied. Visible fields are the submitted values.');
-    } catch (error) {
-      setStatusText(`Could not apply preset: ${error}`);
-    } finally {
-      setLoadingPreset(false);
-    }
   }
 
   async function startGeneration(event) {
@@ -929,25 +893,6 @@ export default function App() {
           </section>
 
           <form onSubmit={startGeneration} className="stack settings-column">
-            <section className="card">
-              <h2>Setup</h2>
-              <p className="hint">Use preset values as a starting point, then edit visible fields.</p>
-              <div className="grid two">
-                <label>Preset
-                  <select value={formState.preset} onChange={(e) => updateField('preset', e.target.value)}>
-                    <option value="">(none)</option>
-                    {presets.map((preset) => <option key={preset} value={preset}>{preset}</option>)}
-                  </select>
-                </label>
-                <label>Env file path (optional)
-                  <input value={formState.env_file} onChange={(e) => updateField('env_file', e.target.value)} placeholder="configs/my-import.env" />
-                </label>
-              </div>
-              <button type="button" className="ghost" onClick={applyPreset} disabled={loadingPreset}>
-                {loadingPreset ? 'Applying Preset...' : 'Apply Preset To Form'}
-              </button>
-            </section>
-
             <div className="settings-grid">
               <div className="settings-subcolumn">
                 <section className="card input-output-card">
