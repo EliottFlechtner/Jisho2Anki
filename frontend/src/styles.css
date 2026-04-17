@@ -30,7 +30,7 @@ body {
 }
 
 .panel {
-  max-width: 980px;
+  max-width: 1420px;
   margin: 0 auto;
   border-radius: 18px;
   border: 1px solid #d2d9d2;
@@ -77,6 +77,35 @@ h2 {
   border-radius: 12px;
   background: var(--card);
   padding: 0.85rem;
+}
+
+.main-columns {
+  display: grid;
+  gap: 0.95rem;
+  grid-template-columns: minmax(290px, 0.9fr) minmax(0, 1.7fr);
+  align-items: start;
+}
+
+.status-column {
+  position: sticky;
+  top: 0.9rem;
+}
+
+.settings-column {
+  margin-top: 0;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.settings-subcolumn {
+  display: grid;
+  gap: 0.8rem;
+  align-content: start;
 }
 
 .status-head {
@@ -273,6 +302,19 @@ button:disabled {
 @media (max-width: 860px) {
   .panel {
     padding: 1rem;
+  }
+
+  .main-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .status-column {
+    position: static;
+    top: auto;
   }
 
   .grid.two,
