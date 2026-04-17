@@ -243,6 +243,36 @@ def mark_inbox_items_ankied(
         return int(cursor.rowcount)
 
 
+def delete_inbox_item(
+    item_id: int,
+    *,
+    db_path: Path = DEFAULT_DB_PATH,
+) -> bool:
+    """Delete an inbox item by ID. Returns True if deleted successfully."""
+    if not (isinstance(item_id, int) and item_id > 0):
+        return False
+
+    if _supabase_enabled():
+        try:
+            _supabase_request(
+                "DELETE",
+                DEFAULT_TABLE_NAME,
+                query={"id": f"eq.{item_id}"},
+            )
+            return True
+        except Exception:
+            return False
+
+    ensure_inbox_db(db_path)
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "DELETE FROM inbox_items WHERE id = ?",
+            (item_id,),
+        )
+        conn.commit()
+        return int(cursor.rowcount) > 0
+
+
 def pending_inbox_count(*, db_path: Path = DEFAULT_DB_PATH) -> int:
     """Return count of pending inbox rows."""
     if _supabase_enabled():

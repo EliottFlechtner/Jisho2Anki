@@ -71,11 +71,11 @@ function buildInitialState(defaults) {
   return state;
 }
 
-function toFormData(formState, showOutputPath) {
+function toFormData(formState) {
   const data = new FormData();
 
   for (const key of TEXT_FIELDS) {
-    if (key === 'output_path' && !showOutputPath) {
+    if (key === 'output_path') {
       continue;
     }
     data.append(key, formState[key] ?? '');
@@ -108,7 +108,7 @@ export default function App() {
   const [confirmingAdd, setConfirmingAdd] = useState(false);
   const [jobId, setJobId] = useState('');
   const [loadingPreset, setLoadingPreset] = useState(false);
-  const [showOutputPath, setShowOutputPath] = useState(false);
+
   const [showAnkiUrl, setShowAnkiUrl] = useState(false);
   const [ankiModels, setAnkiModels] = useState([]);
   const [ankiDecks, setAnkiDecks] = useState([]);
@@ -383,7 +383,7 @@ export default function App() {
     try {
       const resp = await fetch('/api/start', {
         method: 'POST',
-        body: toFormData(formState, showOutputPath),
+        body: toFormData(formState),
       });
       const payload = await resp.json();
       setJobId(payload.job_id || '');
@@ -480,6 +480,22 @@ export default function App() {
     }));
   }
 
+  async function deleteInboxItem(itemId) {
+    try {
+      const resp = await fetch(`/api/inbox/delete/${itemId}`, {
+        method: 'DELETE',
+      });
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => ({}));
+        throw new Error(payload.error || `HTTP ${resp.status}`);
+      }
+      setInboxItems((prev) => prev.filter((item) => item.id !== itemId));
+      setStatusText(`Deleted inbox item ${itemId}.`);
+    } catch (error) {
+      setStatusText(`Could not delete inbox item: ${error}`);
+    }
+  }
+
   async function confirmAddToAnki() {
     if (!confirmationJobId) {
       return;
@@ -536,13 +552,16 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (!formState.anki_connect) {
-      setAnkiModels([]);
-      setAnkiDecks([]);
-      return;
+    if (confirmationJobId && !formState.review_before_anki && reviewItems.length > 0 && reviewChoices.length > 0) {
+      confirmAddToAnki();
     }
-    fetchAnkiOptions();
-  }, [formState.anki_connect, formState.anki_url, showAnkiUrl]);
+  }, [confirmationJobId, formState.review_before_anki, reviewItems.length, reviewChoices.length]);
+
+  useEffect(() => {
+    if (confirmationJobId && !formState.review_before_anki && reviewItems.length > 0 && reviewChoices.length > 0) {
+      confirmAddToAnki();
+    }
+  }, [confirmationJobId, formState.review_before_anki, reviewItems.length, reviewChoices.length]);
 
   useEffect(() => {
     fetchInboxPending({silent: true});
@@ -960,21 +979,7 @@ export default function App() {
                       />
                     </label>
 
-                    <label className="toggle full">
-                      <input type="checkbox" checked={showOutputPath} onChange={(e) => setShowOutputPath(e.target.checked)} />
-                      Set custom Output TSV path
-                    </label>
-
-                    {showOutputPath ? (
-                      <label className="full">Output TSV path
-                        <input value={formState.output_path} onChange={(e) => updateField('output_path', e.target.value)} />
-                      </label>
-                    ) : null}
                   </div>
-                  <label className="toggle">
-                    <input type="checkbox" checked={formState.include_header} onChange={(e) => updateField('include_header', e.target.checked)} />
-                    Include header row in TSV
-                  </label>
 
                   {showInboxOverlay && inboxItems.length > 0 ? (
                     <div className="inbox-overlay" role="dialog" aria-label="Pending inbox items">
@@ -991,6 +996,21 @@ export default function App() {
                         {inboxItems.slice(0, 12).map((item) => (
                           <div key={item.id} className="inbox-item">
                             <span className="inbox-item-text">{item.text}</span>
+                            <button
+                              type="button"
+                              className="inbox-item-delete"
+                              aria-label="Delete inbox item"
+                              onClick={() => deleteInboxItem(item.id)}
+                              title="Delete item"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-hidden="true" focusable="false">
+                                <rect width="256" height="256" fill="none"/>
+                                <line x1="216" y1="56" x2="40" y2="56" strokeLinecap="round" strokeLinejoin="round" strokeWidth="12"/>
+                                <path d="M104,104v72a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm64,0v72a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z" fill="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="8"/>
+                                <path d="M180.88,56V40a16,16,0,0,0-16-16H92.12a16,16,0,0,0-16,16V56" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="12"/>
+                                <path d="M88,56V40a8,8,0,0,1,8-8h72a8,8,0,0,1,8,8V56M200,56v24a8,8,0,0,1-8,8H80a8,8,0,0,1-8-8V56" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="12"/>
+                              </svg>
+                            </button>
                           </div>
                         ))}
                         {inboxItems.length > 12 ? <p className="hint">Showing first 12 items.</p> : null}

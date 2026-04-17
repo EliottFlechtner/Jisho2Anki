@@ -24,6 +24,7 @@ from .pipeline import build_rows
 from .pitch_accent import enrich_html_with_pitch
 from .inbox_store import (
     add_inbox_items,
+    delete_inbox_item,
     ensure_inbox_db,
     list_pending_inbox_items,
     mark_inbox_items_ankied,
@@ -765,6 +766,21 @@ def api_inbox_mark_ankied() -> Any:
 
     changed = mark_inbox_items_ankied(ids)
     return jsonify({"changed": changed, "count": pending_inbox_count()})
+
+
+@app.delete("/api/inbox/delete/<int:item_id>")
+def api_inbox_delete(item_id: int) -> Any:
+    """Delete an inbox item by ID."""
+    if not (isinstance(item_id, int) and item_id > 0):
+        return jsonify({"error": "invalid item_id"}), 400
+
+    success = delete_inbox_item(item_id)
+    if not success:
+        return jsonify({"error": "could not delete item"}), 400
+
+    return jsonify(
+        {"success": True, "deleted": item_id, "count": pending_inbox_count()}
+    )
 
 
 @app.post("/api/start")

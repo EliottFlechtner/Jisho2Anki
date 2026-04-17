@@ -352,7 +352,7 @@ h3 {
 .inbox-item {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 0.45rem;
   border: 1px solid #e2e8e2;
   background: #fff;
@@ -360,12 +360,35 @@ h3 {
   padding: 0.4rem 0.5rem;
 }
 
-.inbox-item-check {
+.inbox-item-text {
+  flex: 1;
+  font-weight: 500;
+}
+
+.inbox-item-delete {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  cursor: pointer;
+  color: #999999;
+  flex-shrink: 0;
+}
+
+.inbox-item-delete:hover {
+  color: #dd3333;
+}
+
+.inbox-item-delete svg {
   width: 100%;
-  font-weight: 500;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
 }
 
 .inbox-item-check input {
@@ -470,15 +493,21 @@ h3 {
   border-radius: 999px;
   background: #eef5ef;
   color: #22493e;
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 2.6rem;
+  height: 2.6rem;
   padding: 0;
+}
+
+.inbox-bell.is-empty {
+  background: #f0f0f0;
+  color: #888888;
+  border-color: #d0d0d0;
 }
 
 .inbox-bell-icon {
   display: inline-flex;
-  width: 1rem;
-  height: 1rem;
+  width: 1.1rem;
+  height: 1.1rem;
   line-height: 1;
 }
 
