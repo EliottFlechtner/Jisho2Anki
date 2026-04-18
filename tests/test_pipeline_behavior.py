@@ -267,6 +267,36 @@ class PipelineBehaviorTests(unittest.TestCase):
         self.assertIn("<ruby>", row.word)
         self.assertIn("<rt>た</rt>", row.word)
 
+    def test_build_word_result_skips_furigana_when_reading_missing(self) -> None:
+        """Missing readings should leave the word plain and avoid furigana rendering."""
+        candidates = [SearchCandidate(meaning="unknown", reading="")]
+
+        with (
+            patch(
+                "autofiller.pipeline.JishoClient.search",
+                return_value=(candidates, []),
+            ),
+            patch("autofiller.pipeline.add_furigana") as add_furigana_mock,
+        ):
+            row, _sentence_rows, reading, plain_meaning = _build_word_result(
+                word="謎",
+                candidate_limit=3,
+                sentence_count=0,
+                include_sentences=False,
+                separate_sentence_cards=False,
+                include_pitch_accent=False,
+                pitch_accent_theme="dark",
+                include_furigana=True,
+                furigana_format="ruby",
+                interactive_review=False,
+                selector=lambda _word, cands: cands[0],
+            )
+
+        add_furigana_mock.assert_not_called()
+        self.assertEqual(row.word, "謎")
+        self.assertEqual(reading, "")
+        self.assertEqual(plain_meaning, "unknown")
+
     def test_build_word_result_passes_pitch_theme(self) -> None:
         """Pitch rendering should forward the selected SVG theme option."""
         candidates = [SearchCandidate(meaning="rain", reading="あめ")]
