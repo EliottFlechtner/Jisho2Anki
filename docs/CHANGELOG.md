@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-04-18
+
+### Added
+- **Playwright end-to-end UI regression suite** for key web workflows:
+  - Anki model/deck option loading.
+  - Generate -> review -> confirm path with selection payload checks.
+  - Inbox overlay import and delete flows.
+- Frontend scripts for E2E execution (`npm run test:e2e`, `npm run test:e2e:headed`).
+
+### Changed
+- **Review item generation now uses `max_workers` parallelism** in web review-before-Anki mode.
+  - Preserves original row order while parallelizing Jisho review candidate lookups.
+  - Extends performance tuning behavior so review generation follows the same worker setting used during row build.
+
+### Fixed
+- Restored stable React hook execution order in the SPA to avoid blank-page runtime rendering failures.
+- Added backend regression coverage to ensure review generation receives `max_workers` from request settings.
+
 ## [1.0.3] - 2026-04-17
 
 ### Added
