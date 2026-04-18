@@ -11,6 +11,9 @@ services:
       ANKI_JISHO2ANKI_FLASK_PORT: 5000
       ANKI_JISHO2ANKI_OUTPUT_PATH: /app/output/anki_import.tsv
       ANKI_JISHO2ANKI_ANKI_URL: ${ANKI_JISHO2ANKI_ANKI_URL:-http://host.docker.internal:8765}
+      ANKI_JISHO2ANKI_ALLOWED_IPS: ${ANKI_JISHO2ANKI_ALLOWED_IPS:-}
+      ANKI_JISHO2ANKI_WEB_AUTH_USERNAME: ${ANKI_JISHO2ANKI_WEB_AUTH_USERNAME:-}
+      ANKI_JISHO2ANKI_WEB_AUTH_PASSWORD: ${ANKI_JISHO2ANKI_WEB_AUTH_PASSWORD:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
