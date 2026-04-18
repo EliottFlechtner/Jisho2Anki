@@ -294,6 +294,124 @@ class WebApiEndpointTests(unittest.TestCase):
             with web_app_module.JOB_LOCK:
                 web_app_module.JOBS.pop(job_id, None)
 
+    def test_confirm_add_blocks_invalid_rows_without_skip_mode(self) -> None:
+        """Confirm endpoint should reject invalid rows when skip mode is disabled."""
+        app = web_app_module.app
+        job_id = "job-confirm-invalid-block"
+
+        pending_add = {
+            "rows": [
+                {"word": "A", "meaning": "good", "reading": "read-A"},
+                {"word": "B", "meaning": "", "reading": ""},
+            ],
+            "sentence_rows": [],
+            "review_items": [],
+            "separate_sentence_cards": False,
+            "anki_url": "http://127.0.0.1:8765",
+            "deck_name": "Example",
+            "model_name": "Jisho2Anki::Vocab",
+            "field_word": "Word",
+            "field_meaning": "Translation",
+            "field_reading": "Reading",
+            "tags": ["jp"],
+            "allow_duplicates": False,
+        }
+
+        with web_app_module.JOB_LOCK:
+            web_app_module.JOBS[job_id] = {
+                "status": "done",
+                "requires_confirmation": True,
+                "pending_add": pending_add,
+                "anki_summary": "",
+            }
+
+        try:
+            with (
+                app.test_client() as client,
+                patch("autofiller.web_app.add_rows_to_anki") as add_rows_mock,
+            ):
+                response = client.post(
+                    f"/api/confirm/{job_id}",
+                    json={"only_add_valid_rows": False},
+                )
+
+            self.assertEqual(response.status_code, 400)
+            payload = response.get_json()
+            self.assertIn("validation failed", payload["error"])
+            self.assertTrue(payload["validation"]["rows"])
+            add_rows_mock.assert_not_called()
+
+            with web_app_module.JOB_LOCK:
+                job = web_app_module.JOBS[job_id]
+            self.assertTrue(job["requires_confirmation"])
+        finally:
+            with web_app_module.JOB_LOCK:
+                web_app_module.JOBS.pop(job_id, None)
+
+    def test_confirm_add_only_valid_rows_skips_invalid_with_summary(self) -> None:
+        """Confirm endpoint should submit only valid rows and report skipped invalid rows."""
+        app = web_app_module.app
+        job_id = "job-confirm-skip-invalid"
+
+        pending_add = {
+            "rows": [
+                {"word": "A", "meaning": "good", "reading": "read-A"},
+                {"word": "B", "meaning": "", "reading": ""},
+            ],
+            "sentence_rows": [],
+            "review_items": [],
+            "separate_sentence_cards": False,
+            "anki_url": "http://127.0.0.1:8765",
+            "deck_name": "Example",
+            "model_name": "Jisho2Anki::Vocab",
+            "field_word": "Word",
+            "field_meaning": "Translation",
+            "field_reading": "Reading",
+            "tags": ["jp"],
+            "allow_duplicates": False,
+        }
+
+        with web_app_module.JOB_LOCK:
+            web_app_module.JOBS[job_id] = {
+                "status": "done",
+                "requires_confirmation": True,
+                "pending_add": pending_add,
+                "anki_summary": "",
+            }
+
+        captured_rows: list[CardRow] = []
+
+        def _capture_rows(rows, **_kwargs):
+            captured_rows.extend(rows)
+            return (len(rows), 0)
+
+        try:
+            with (
+                app.test_client() as client,
+                patch("autofiller.web_app.add_rows_to_anki", side_effect=_capture_rows),
+            ):
+                response = client.post(
+                    f"/api/confirm/{job_id}",
+                    json={"only_add_valid_rows": True},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertEqual(len(captured_rows), 1)
+            self.assertEqual(captured_rows[0].word, "A")
+            self.assertIn("Skipped 1 invalid row(s)", payload["anki_summary"])
+            self.assertEqual(payload["skipped_rows"], 1)
+            self.assertIn("missing meaning", payload["skipped_reasons"])
+            self.assertIn("missing reading", payload["skipped_reasons"])
+
+            with web_app_module.JOB_LOCK:
+                job = web_app_module.JOBS[job_id]
+            self.assertFalse(job["requires_confirmation"])
+            self.assertIsNone(job["pending_add"])
+        finally:
+            with web_app_module.JOB_LOCK:
+                web_app_module.JOBS.pop(job_id, None)
+
     def test_review_add_word_appends_once_and_updates_pending_payload(self) -> None:
         """Add-word endpoint should append exactly one review item/row and persist it."""
         app = web_app_module.app

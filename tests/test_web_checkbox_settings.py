@@ -253,6 +253,237 @@ class CheckboxBehaviorTests(unittest.TestCase):
         add_rows_mock.assert_not_called()
         self.assertIn("Review mode enabled", result["anki_summary"])
 
+    def test_option_combination_matrix(self) -> None:
+        """Core toggle combinations should keep stable build and submission behavior."""
+        settings = _base_settings()
+        base_rows = [CardRow(word="語", meaning="meaning", reading="reading")]
+        base_sentence_rows = [SentenceCardRow(front="文", back="sentence")]
+
+        cases = [
+            {
+                "name": "direct-add-default-fields",
+                "form_data": {
+                    "words": "語",
+                    "output_path": "output/test.tsv",
+                    "anki_connect": "true",
+                    "include_pitch_accent": "false",
+                    "include_furigana": "false",
+                    "review_before_anki": "false",
+                    "separate_sentence_cards": "false",
+                    "allow_duplicates": "true",
+                },
+                "expect": {
+                    "build": {
+                        "include_pitch_accent": False,
+                        "include_furigana": False,
+                        "separate_sentence_cards": False,
+                    },
+                    "add_rows_called": True,
+                    "add_sentence_called": False,
+                    "allow_duplicates": True,
+                    "field_word": "Word",
+                    "field_meaning": "Translation",
+                    "field_reading": "Reading",
+                    "requires_confirmation": False,
+                },
+            },
+            {
+                "name": "direct-add-pitch-furigana-separate-custom-fields",
+                "form_data": {
+                    "words": "語",
+                    "output_path": "output/test.tsv",
+                    "anki_connect": "true",
+                    "include_pitch_accent": "true",
+                    "include_furigana": "true",
+                    "furigana_format": "anki",
+                    "pitch_accent_theme": "light",
+                    "review_before_anki": "false",
+                    "separate_sentence_cards": "true",
+                    "allow_duplicates": "false",
+                    "field_word": "Expr",
+                    "field_meaning": "Def",
+                    "field_reading": "Kana",
+                    "sentence_front_field": "SentenceFront",
+                    "sentence_back_field": "SentenceBack",
+                },
+                "expect": {
+                    "build": {
+                        "include_pitch_accent": True,
+                        "include_furigana": True,
+                        "separate_sentence_cards": True,
+                        "furigana_format": "anki",
+                        "pitch_accent_theme": "light",
+                    },
+                    "add_rows_called": True,
+                    "add_sentence_called": True,
+                    "allow_duplicates": False,
+                    "field_word": "Expr",
+                    "field_meaning": "Def",
+                    "field_reading": "Kana",
+                    "sentence_front_field": "SentenceFront",
+                    "sentence_back_field": "SentenceBack",
+                    "requires_confirmation": False,
+                },
+            },
+            {
+                "name": "review-mode-defers-submission",
+                "form_data": {
+                    "words": "語",
+                    "output_path": "output/test.tsv",
+                    "anki_connect": "true",
+                    "include_pitch_accent": "true",
+                    "include_furigana": "true",
+                    "review_before_anki": "true",
+                    "separate_sentence_cards": "true",
+                    "allow_duplicates": "false",
+                    "field_word": "Expr",
+                    "field_meaning": "Def",
+                    "field_reading": "Kana",
+                },
+                "expect": {
+                    "build": {
+                        "include_pitch_accent": True,
+                        "include_furigana": True,
+                        "separate_sentence_cards": True,
+                    },
+                    "add_rows_called": False,
+                    "add_sentence_called": False,
+                    "allow_duplicates": False,
+                    "field_word": "Expr",
+                    "field_meaning": "Def",
+                    "field_reading": "Kana",
+                    "requires_confirmation": True,
+                },
+            },
+            {
+                "name": "no-anki-submit-build-still-gets-toggles",
+                "form_data": {
+                    "words": "語",
+                    "output_path": "output/test.tsv",
+                    "anki_connect": "false",
+                    "include_pitch_accent": "true",
+                    "include_furigana": "false",
+                    "review_before_anki": "false",
+                    "separate_sentence_cards": "true",
+                    "allow_duplicates": "false",
+                },
+                "expect": {
+                    "build": {
+                        "include_pitch_accent": True,
+                        "include_furigana": False,
+                        "separate_sentence_cards": True,
+                    },
+                    "add_rows_called": False,
+                    "add_sentence_called": False,
+                    "requires_confirmation": False,
+                },
+            },
+        ]
+
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                form_data = case["form_data"]
+                expect = case["expect"]
+
+                with (
+                    patch(
+                        "autofiller.web_app._resolved_settings_for_request",
+                        return_value=settings,
+                    ),
+                    patch(
+                        "autofiller.web_app.build_rows",
+                        return_value=(base_rows, base_sentence_rows),
+                    ) as build_rows_mock,
+                    patch("autofiller.web_app.write_tsv"),
+                    patch(
+                        "autofiller.web_app.add_rows_to_anki",
+                        return_value=(1, 0),
+                    ) as add_rows_mock,
+                    patch(
+                        "autofiller.web_app.add_sentence_rows_to_anki",
+                        return_value=(1, 0),
+                    ) as add_sentence_rows_mock,
+                    patch(
+                        "autofiller.web_app._build_review_items",
+                        return_value=[
+                            {
+                                "word": "語",
+                                "source_word": "語",
+                                "options": [
+                                    {
+                                        "meaning": "meaning",
+                                        "reading": "reading",
+                                        "reading_preview": "reading",
+                                    }
+                                ],
+                                "related_words": [],
+                                "selected_index": 0,
+                            }
+                        ],
+                    ),
+                ):
+                    result = _build_from_form(
+                        form_data, progress_printer=lambda _line: None
+                    )
+
+                build_kwargs = build_rows_mock.call_args.kwargs
+                for key, value in expect["build"].items():
+                    self.assertEqual(build_kwargs[key], value)
+
+                if expect["add_rows_called"]:
+                    add_rows_mock.assert_called_once()
+                    add_rows_kwargs = add_rows_mock.call_args.kwargs
+                    self.assertEqual(
+                        add_rows_kwargs["allow_duplicates"], expect["allow_duplicates"]
+                    )
+                    self.assertEqual(
+                        add_rows_kwargs["word_field"], expect["field_word"]
+                    )
+                    self.assertEqual(
+                        add_rows_kwargs["meaning_field"], expect["field_meaning"]
+                    )
+                    self.assertEqual(
+                        add_rows_kwargs["reading_field"], expect["field_reading"]
+                    )
+                else:
+                    add_rows_mock.assert_not_called()
+
+                if expect["add_sentence_called"]:
+                    add_sentence_rows_mock.assert_called_once()
+                    add_sentence_kwargs = add_sentence_rows_mock.call_args.kwargs
+                    self.assertEqual(
+                        add_sentence_kwargs["allow_duplicates"],
+                        expect["allow_duplicates"],
+                    )
+                    if "sentence_front_field" in expect:
+                        self.assertEqual(
+                            add_sentence_kwargs["front_field"],
+                            expect["sentence_front_field"],
+                        )
+                    if "sentence_back_field" in expect:
+                        self.assertEqual(
+                            add_sentence_kwargs["back_field"],
+                            expect["sentence_back_field"],
+                        )
+                else:
+                    add_sentence_rows_mock.assert_not_called()
+
+                self.assertEqual(
+                    result["requires_confirmation"], expect["requires_confirmation"]
+                )
+                if expect["requires_confirmation"]:
+                    pending_add = result["pending_add"]
+                    self.assertEqual(
+                        pending_add["allow_duplicates"], expect["allow_duplicates"]
+                    )
+                    self.assertEqual(pending_add["field_word"], expect["field_word"])
+                    self.assertEqual(
+                        pending_add["field_meaning"], expect["field_meaning"]
+                    )
+                    self.assertEqual(
+                        pending_add["field_reading"], expect["field_reading"]
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
