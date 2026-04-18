@@ -132,6 +132,11 @@ make test
 # Specific test module
 python -m unittest tests.test_config_loading
 
+# Frontend end-to-end tests (Playwright)
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+
 # Tests in Docker
 make test-docker  # (requires running container)
 ```
