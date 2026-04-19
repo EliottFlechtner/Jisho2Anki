@@ -397,6 +397,15 @@ export default function App() {
     }
     try {
       const resp = await fetch('/api/inbox/pending');
+      const contentType = resp.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().includes('application/json')) {
+        const isStaticHost = typeof window !== 'undefined' && window.location.hostname.endsWith('github.io');
+        if (isStaticHost) {
+          throw new Error('Static GitHub Pages build has no backend API. Use ?capture=1 for phone capture, and use your local Flask app for inbox sync.');
+        }
+        const raw = await resp.text();
+        throw new Error(`expected JSON but got ${contentType || 'unknown content-type'}: ${raw.slice(0, 80)}`);
+      }
       const payload = await resp.json();
       if (!resp.ok) {
         throw new Error(payload.error || 'failed to fetch inbox');
